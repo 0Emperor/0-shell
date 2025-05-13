@@ -1,0 +1,10 @@
+pub mod echo;
+pub mod cd;
+pub mod ls;
+pub mod pwd;
+pub mod cat;
+pub mod cp;
+pub mod rm;
+pub mod mv;
+pub mod mkdir;
+pub mod exit;
