@@ -13,12 +13,12 @@ fn main() {
             println!("ur not worthy anyway...");
             break;
         }
-        let input = input.trim();
+        let input = clean_input(input.trim());
         if input.is_empty() {
             continue;
         }
 
-        let cmd = split(clean_input(input));
+        let cmd = split(input);
         match cmd.command.as_str() {
             "exit" => break,
             "echo" => echo::echo(cmd),
