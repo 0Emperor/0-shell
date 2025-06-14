@@ -27,6 +27,13 @@ pub fn cp(args: Vec<String>) {
 
     match fs::metadata(&dst) {
         Ok(meta) => {
+            let abs_dst_path = fs::canonicalize(dst).unwrap();
+            let abs_src_path = fs::canonicalize(src).unwrap();
+            if abs_dst_path == std::env::current_dir().unwrap() || abs_dst_path == abs_src_path {
+                println!("You have been try to copy the same file!");
+                return;
+            }
+
             if meta.is_dir() {
                 if let Err(e) = std::env::set_current_dir(dst) {
                     eprintln!("{}", e);
@@ -37,19 +44,18 @@ pub fn cp(args: Vec<String>) {
                     eprintln!("{}", e);
                     return;
                 }
-                if dst != "." {
-                    if let Err(e) = std::env::set_current_dir("..") {
-                        eprintln!("{}", e);
-                        return;
-                    }
-                    if let Err(e) = fs::copy(&src, format!("{}/{}", dst, src)) {
-                        eprintln!("{}", e);
-                        return;
-                    }
+                if let Err(e) = std::env::set_current_dir("..") {
+                    eprintln!("{}", e);
+                    return;
+                }
+                if let Err(e) = fs::copy(&src, format!("{}/{}", dst, src)) {
+                    eprintln!("{}", e);
+                    return;
                 }
 
                 return;
             } else {
+                println!("Hereeeee");
                 if let Err(e) = fs::copy(&src, dst) {
                     eprintln!("cp: error copying '{}': {}", src, e);
                 }
