@@ -13,28 +13,28 @@ fn main() {
             println!("ur not worthy anyway...");
             break;
         }
-let input=input.trim();
+        let input = input.trim();
         if input.is_empty() {
             continue;
         }
 
-        let cmd  =split(clean_input(input));
+        let cmd = split(clean_input(input));
         match cmd.command.as_str() {
             "exit" => break,
-            "echo"=> echo::echo(cmd),
-            "pwd"=> pwd::pwd(),
-            "mkdir"=> mkdir::mkdir(cmd.args),
-            "cat"=> cat::cat(cmd.args),
-            "cp"=> cp::cp(cmd.args),
-            "cd"=> cd::cd(cmd.args),
+            "echo" => echo::echo(cmd),
+            "pwd" => pwd::pwd(),
+            "mkdir" => mkdir::mkdir(cmd.args),
+            "cat" => cat::cat(cmd.args),
+            "cp" => cp::cp(cmd.args),
+            "cd" => cd::cd(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
     println!("good bye, we wont miss you.");
 }
 pub struct Cmd {
-  pub  command: String,
-  pub  args: Vec<String>,
+    pub command: String,
+    pub args: Vec<String>,
 }
 fn clean_input(input: &str) -> String {
     let re = regex::Regex::new(r"\x1B\[[A-D]").unwrap();
@@ -72,21 +72,19 @@ fn split(input: String) -> Cmd {
 
     let command = match tokens.get(0) {
         Some(cmd) => cmd.clone(),
-        None => return Cmd {
-            command: String::new(),
-            args: vec![],
-        },
+        None => {
+            return Cmd {
+                command: String::new(),
+                args: vec![],
+            }
+        }
     };
 
     let mut args = Vec::new();
 
     for token in tokens.iter().skip(1) {
-        
-            args.push(token.clone());
+        args.push(token.clone());
     }
 
-    Cmd {
-        command,
-        args,
-    }
+    Cmd { command, args }
 }
