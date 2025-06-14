@@ -7,3 +7,4 @@ pub fn cat(args:Vec<String>){
             };
     }
 }
+// when we enter only cat command we should enable the user to write in the stdin
