@@ -2,7 +2,6 @@ mod commands;
 use commands::*;
 use std::env;
 use std::io::{self, Write};
-use std::process;
 fn main() {
     loop {
         print!("$ ");
@@ -13,12 +12,24 @@ fn main() {
             println!("ur not worthy anyway...");
             break;
         }
-        let input = clean_input(input.trim());
+        let mut input = clean_input(&input);
         if input.is_empty() {
             continue;
         }
 
-        let cmd = split(input);
+        let cmd = loop {
+            if let Ok(c) = split(input.trim()) {
+                break c;
+            }
+            print!("dequote> ");
+            io::stdout().flush().unwrap();
+            let mut cont = String::new();
+            let bytes = io::stdin().read_line(&mut cont).unwrap();
+            if bytes == 0 {
+                return;
+            }
+            input.push_str(&cont);
+        };
         match cmd.command.as_str() {
             "exit" => break,
             "echo" => echo::echo(cmd),
@@ -32,6 +43,7 @@ fn main() {
     }
     println!("good bye, we wont miss you.");
 }
+#[derive(Debug)]
 pub struct Cmd {
     pub command: String,
     pub args: Vec<String>,
@@ -40,96 +52,81 @@ fn clean_input(input: &str) -> String {
     let re = regex::Regex::new(r"\x1B\[[A-D]").unwrap();
     re.replace_all(input, "").to_string()
 }
-fn split(input: String) -> Cmd {
+pub fn split(input: &str) -> Result<Cmd, u8> {
     let mut tokens = Vec::new();
     let mut current = String::new();
-    let mut in_quotes = false;
-    let mut chars = input.trim().chars().peekable();
-    let mut var = String::new();
+    let mut chars = input.chars().peekable();
+
+    let mut in_single_quotes = false;
+    let mut in_double_quotes = false;
+
     while let Some(&ch) = chars.peek() {
         match ch {
-            '"' => {
-                chars.next(); // skip the quote
-                in_quotes = !in_quotes;
+            '\'' if !in_double_quotes => {
+                chars.next();
+                in_single_quotes = !in_single_quotes;
             }
-            ' ' if !in_quotes => {
-                chars.next(); // skip the space
-                if !var.is_empty() {
-                    match env::var_os(var.trim()) {
-                        Some(r) => {
-                            if let Ok(r) = r.into_string() {
-                                current.push_str(&r)
-                            }
-                        }
-                        _ => {}
-                    }
-                    var.clear();
-                }
+            '"' if !in_single_quotes => {
+                chars.next();
+                in_double_quotes = !in_double_quotes;
+            }
+            ' ' if !in_single_quotes && !in_double_quotes => {
+                chars.next();
                 if !current.is_empty() {
                     tokens.push(current.clone());
                     current.clear();
                 }
             }
-            '$' => {
-                if var.is_empty() {
-                    var.push(' ');
+            '$' if !in_single_quotes => {
+                chars.next(); // skip '$'
+                let mut var_name = String::new();
+                if let Some(&'{') = chars.peek() {
+                    chars.next(); // skip '{'
+                    while let Some(&c) = chars.peek() {
+                        if c == '}' {
+                            chars.next(); // skip '}'
+                            break;
+                        }
+                        var_name.push(c);
+                        chars.next();
+                    }
                 } else {
-                    current.push_str(&process::id().to_string());
-                    var.clear();
+                    while let Some(&c) = chars.peek() {
+                        if c.is_alphanumeric() || c == '_' {
+                            var_name.push(c);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
                 }
+                if let Ok(val) = env::var(&var_name) {
+                    current.push_str(&val);
+                }
+            }
+            '~' if current.is_empty() && !in_single_quotes && !in_double_quotes => {
                 chars.next();
+                if let Ok(home) = env::var("HOME") {
+                    current.push_str(&home);
+                } else {
+                    current.push('~');
+                }
             }
             _ => {
-                if var.is_empty() {
-                    current.push(ch);
-                } else if ch.is_alphanumeric() {
-                    var.push(ch)
-                } else {
-                    match env::var_os(var.trim()) {
-                        Some(r) => {
-                            if let Ok(r) = r.into_string() {
-                                current.push_str(&r)
-                            }
-                        }
-                        _ => {}
-                    }
-                    var.clear();
-                    current.push(ch);
-                }
+                current.push(ch);
                 chars.next();
             }
         }
-    }
-    if !var.is_empty() {
-        match env::var_os(var.trim()) {
-            Some(r) => {
-                if let Ok(r) = r.into_string() {
-                    current.push_str(&r)
-                }
-            }
-            _ => {}
-        }
-        var.clear();
     }
 
     if !current.is_empty() {
         tokens.push(current);
     }
 
-    let command = match tokens.get(0) {
-        Some(cmd) => cmd.clone(),
-        _ => {
-            return Cmd {
-                command: String::new(),
-                args: vec![],
-            }
-        }
-    };
-
-    let mut args = Vec::new();
-
-    for token in tokens.iter().skip(1) {
-        args.push(token.clone());
+    let command = tokens.get(0).cloned().unwrap_or_default();
+    let args = tokens.iter().skip(1).cloned().collect();
+    if in_double_quotes || in_single_quotes {
+        return Err(1);
     }
-    Cmd { command, args }
+    Ok(Cmd { command, args })
 }
