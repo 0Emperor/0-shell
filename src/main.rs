@@ -1,8 +1,8 @@
 mod commands;
 use commands::*;
-
+use std::env;
 use std::io::{self, Write};
-
+use std::process;
 fn main() {
     loop {
         print!("$ ");
@@ -45,7 +45,7 @@ fn split(input: String) -> Cmd {
     let mut current = String::new();
     let mut in_quotes = false;
     let mut chars = input.trim().chars().peekable();
-
+    let mut var = String::new();
     while let Some(&ch) = chars.peek() {
         match ch {
             '"' => {
@@ -54,16 +54,62 @@ fn split(input: String) -> Cmd {
             }
             ' ' if !in_quotes => {
                 chars.next(); // skip the space
+                if !var.is_empty() {
+                    match env::var_os(var.trim()) {
+                        Some(r) => {
+                            if let Ok(r) = r.into_string() {
+                                current.push_str(&r)
+                            }
+                        }
+                        _ => {}
+                    }
+                    var.clear();
+                }
                 if !current.is_empty() {
                     tokens.push(current.clone());
                     current.clear();
                 }
             }
+            '$' => {
+                if var.is_empty() {
+                    var.push(' ');
+                } else {
+                    current.push_str(&process::id().to_string());
+                    var.clear();
+                }
+                chars.next();
+            }
             _ => {
-                current.push(ch);
+                if var.is_empty() {
+                    current.push(ch);
+                } else if ch.is_alphanumeric() {
+                    var.push(ch)
+                } else {
+                    match env::var_os(var.trim()) {
+                        Some(r) => {
+                            if let Ok(r) = r.into_string() {
+                                current.push_str(&r)
+                            }
+                        }
+                        _ => {}
+                    }
+                    var.clear();
+                    current.push(ch);
+                }
                 chars.next();
             }
         }
+    }
+    if !var.is_empty() {
+        match env::var_os(var.trim()) {
+            Some(r) => {
+                if let Ok(r) = r.into_string() {
+                    current.push_str(&r)
+                }
+            }
+            _ => {}
+        }
+        var.clear();
     }
 
     if !current.is_empty() {
@@ -72,7 +118,7 @@ fn split(input: String) -> Cmd {
 
     let command = match tokens.get(0) {
         Some(cmd) => cmd.clone(),
-        None => {
+        _ => {
             return Cmd {
                 command: String::new(),
                 args: vec![],
@@ -85,6 +131,5 @@ fn split(input: String) -> Cmd {
     for token in tokens.iter().skip(1) {
         args.push(token.clone());
     }
-
     Cmd { command, args }
 }
