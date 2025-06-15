@@ -1,16 +1,14 @@
 use std::env;
-
-pub fn cd(args: Vec<String>){
-    if args.len()==0{
-        if let Some(home_dir) = env::home_dir() {
-            if let Err(e) = env::set_current_dir(&home_dir) {
-                eprintln!("cd: {}: {}", home_dir.display(), e);
+pub fn cd(args: Vec<String>) {
+    if args.is_empty() {
+        if let Some(h) = env::var_os("HOME") {
+            if let Err(e) = env::set_current_dir(h) {
+                eprintln!("cd: {}",  e);
             }
         } else {
             eprintln!("cd: Unable to determine home directory");
         }
-
-    return
+        return;
     }
     if args.len() != 1 {
         eprintln!("cd: expected exactly one argument");
@@ -21,4 +19,4 @@ pub fn cd(args: Vec<String>){
     if let Err(e) = env::set_current_dir(path) {
         eprintln!("cd: {}: {}", path, e);
     }
-} 
+}
