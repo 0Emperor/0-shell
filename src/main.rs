@@ -38,6 +38,7 @@ fn main() {
             "cat" => cat::cat(cmd.args),
             "cp" => cp::cp(cmd.args),
             "cd" => cd::cd(cmd.args),
+            "mv" => mv::mv(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
