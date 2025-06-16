@@ -1,3 +1,0 @@
-console.log("sds");
-
-while (true) {}

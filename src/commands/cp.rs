@@ -25,11 +25,14 @@ pub fn cp(args: Vec<String>) {
         }
     }
 
-    match fs::metadata(&dst) {
-        Ok(meta) => {
-            let abs_dst_path = fs::canonicalize(dst).unwrap();
-            let abs_src_path = fs::canonicalize(src).unwrap();
-            if abs_dst_path == std::env::current_dir().unwrap() || abs_dst_path == abs_src_path {
+    match (
+        fs::metadata(&dst),
+        fs::canonicalize(dst),
+        fs::canonicalize(src),
+        std::env::current_dir(),
+    ) {
+        (Ok(meta), Ok(abs_dst_path), Ok(abs_src_path), Ok(cdr)) => {
+            if abs_dst_path == cdr || abs_dst_path == abs_src_path {
                 println!("You have been try to copy the same file!");
                 return;
             }
@@ -55,14 +58,17 @@ pub fn cp(args: Vec<String>) {
 
                 return;
             } else {
-                println!("Hereeeee");
                 if let Err(e) = fs::copy(&src, dst) {
                     eprintln!("cp: error copying '{}': {}", src, e);
                 }
             }
         }
-        Err(e) => {
+        (Err(e), _, _, _) => {
             eprintln!("cp: cannot access '{}': {}", src, e);
+            return;
+        }
+        _ => {
+            eprintln!("cp: Error");
             return;
         }
     }
