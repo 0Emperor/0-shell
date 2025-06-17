@@ -39,6 +39,7 @@ fn main() {
             "cp" => cp::cp(cmd.args),
             "cd" => cd::cd(cmd.args),
             "mv" => mv::mv(cmd.args),
+            "rm" => rm::rm(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
