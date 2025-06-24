@@ -27,6 +27,7 @@ let input=input.trim();
             "cat"=> cat::cat(cmd.args),
             "cp"=> cp::cp(cmd.args),
             "cd"=> cd::cd(cmd.args),
+            "ls"=>ls::ls(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
