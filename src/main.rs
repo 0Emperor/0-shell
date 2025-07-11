@@ -40,6 +40,12 @@ fn main() {
             "cd" => cd::cd(cmd.args),
             "mv" => mv::mv(cmd.args),
             "rm" => rm::rm(cmd.args),
+            "ls" => match ls::ls(cmd.args){
+                Ok(())=>{}
+                Err(e)=>{
+                    println!("{}",e)
+                }
+            },
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
