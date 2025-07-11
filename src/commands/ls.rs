@@ -55,7 +55,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                             let group = get_group_by_gid(gid).map(|g| g.name().to_string_lossy().to_string()).unwrap_or(gid.to_string());
 
                             display = format!(
-                                "{} {} {} {} {:>5} {} {}",
+                                "{} {} {} {} {} {} {}",
                                 mode, nlink, user, group, size, time_str, display
                             );
                         }
@@ -86,7 +86,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                 }
 
                 if l {
-                    let v = files
+                    let mut v = files
                         .clone()
                         .into_iter()
                         .map(|x| {
@@ -96,7 +96,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         })
                         .collect::<Vec<Vec<String>>>();
 
-                    output.push_str(&formatls(v).trim_start());
+                    output.push_str(&formatls(&mut v).trim_start());
                 } else {
                     output.push_str(&format_columns(files).trim_start());
                 }
@@ -133,8 +133,8 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
     Ok(())
 }
 
-fn formatls(v: Vec<Vec<String>>) -> String {
-    let maxwidths = maxwidths(&v);
+fn formatls(v: &mut Vec<Vec<String>>) -> String {
+    let maxwidths = maxwidths(v);
     let lines: Vec<String> = v
         .into_iter()
         .map(|line| {
@@ -154,10 +154,15 @@ fn formatls(v: Vec<Vec<String>>) -> String {
     lines.join("\n")
 }
 
-fn maxwidths(v: &Vec<Vec<String>>) -> Vec<usize> {
-    let mut r = vec![0; 9];
-    for line in v {
-        for (i, col) in line.iter().enumerate() {
+fn maxwidths(v: &mut Vec<Vec<String>>) -> Vec<usize> {
+    let mut r = vec![0;9];
+    for   line in v {
+        for (i, col) in line.clone().iter().enumerate() {
+            if i == 9{
+                if let Some(extra)= line.pop(){
+                    line[8].push_str(&format!(" {}",extra));
+                }
+            }
             if i < r.len() {
                 r[i] = r[i].max(col.len());
             }
