@@ -2,8 +2,16 @@ mod commands;
 use commands::*;
 use std::env;
 use std::io::{self, Write};
+pub static mut CURR:String = String::new();
 fn main() {
+ 
     loop {
+           unsafe {
+CURR = match std::env::current_dir() {
+        Ok(path) => path.display().to_string(),
+        Err(_) => CURR.clone(),
+    }
+    }
         print!("$ ");
         io::stdout().flush().unwrap();
         let mut input = String::new();
