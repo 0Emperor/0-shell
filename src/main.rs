@@ -46,6 +46,7 @@ fn main() {
                     println!("{}",e)
                 }
             },
+            "clear"=>clear::clear(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
