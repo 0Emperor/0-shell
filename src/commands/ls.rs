@@ -108,7 +108,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                     files.insert(0, par);
                     files.insert(0, cur);
                 }
-                if files.is_empty() {
+                if files.is_empty() && arguments.len()!= 1 {
                     rs.push(format!("{}:", dir));
                     continue;
                 }
@@ -155,14 +155,12 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
         }
     } else {
         if !ers.is_empty() {
-            println!("{}", ers.join("\n"));
+            println!("{}\n", ers.join("\n"));
         }
-        if !rs.is_empty() {
-            print!("{}", rs.join("\n\n"));
+        if !rs.is_empty() && rs[0] != ""{
+            print!("{}\n", rs.join("\n\n"));
         }
-        println!();
     }
-
     Ok(())
 }
 
