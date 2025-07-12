@@ -1,9 +1,8 @@
 use chrono::{DateTime, Local};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::{fs, io};
-use terminal_size::{Width, terminal_size};
+use terminal_size::{terminal_size, Width};
 use users::{get_group_by_gid, get_user_by_uid};
-
 
 pub fn ls(dirs: Vec<String>) -> io::Result<()> {
     let mut rs = vec![];
@@ -23,10 +22,35 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                 let mut paths = entries
                     .map(|res| res.map(|e| e.path()))
                     .collect::<Result<Vec<_>, io::Error>>()?;
-
-                paths.sort();
-                let mut files = vec![];
-
+                paths.sort_by(|a, b| {
+                    a.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| {
+                            s.trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+                                .to_ascii_lowercase()
+                                .to_string()
+                        })
+                        .cmp(&b.file_name().and_then(|s| s.to_str()).map(|s| {
+                            s.trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+                                .to_ascii_lowercase()
+                                .to_string()
+                        }))
+                });
+                let total_blocks: u64 = paths.iter()
+                .filter(|entry| {
+                    if let Some(name) = entry.file_name().and_then(|s| s.to_str()) {
+                        a || !name.starts_with('.')
+                    } else {
+                        false
+                    }
+                })
+                .filter_map(|entry| fs::symlink_metadata(entry).ok())
+                .map(|meta| meta.blocks() / 2)
+                .sum();
+            if l && arguments.len() == 1{
+                println!("total {}", total_blocks);
+            }
+                let mut files: Vec<String> = vec![];
                 for entry in paths {
                     if let Some(filename) = entry.file_name() {
                         let name = filename.to_string_lossy();
@@ -37,7 +61,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         let mut display = if f {
                             let meta = fs::symlink_metadata(&entry)?;
                             let file_type = meta.file_type();
-                            format!("{}{}", name, classify_suffix(&file_type, &meta))
+                            format!("{}{}", name, classify_suffix(&file_type, &meta,l))
                         } else {
                             name.to_string()
                         };
@@ -51,8 +75,12 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                             let size = meta.len();
                             let modified: DateTime<Local> = DateTime::from(meta.modified()?);
                             let time_str = modified.format("%b %e %H:%M").to_string();
-                            let user = get_user_by_uid(uid).map(|u| u.name().to_string_lossy().to_string()).unwrap_or(uid.to_string());
-                            let group = get_group_by_gid(gid).map(|g| g.name().to_string_lossy().to_string()).unwrap_or(gid.to_string());
+                            let user = get_user_by_uid(uid)
+                                .map(|u| u.name().to_string_lossy().to_string())
+                                .unwrap_or(uid.to_string());
+                            let group = get_group_by_gid(gid)
+                                .map(|g| g.name().to_string_lossy().to_string())
+                                .unwrap_or(gid.to_string());
 
                             display = format!(
                                 "{} {} {} {} {} {} {}",
@@ -63,7 +91,6 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         files.push(display);
                     }
                 }
-
                 if a {
                     let mut cur = ".".to_string();
                     let mut par = "..".to_string();
@@ -71,20 +98,25 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         cur.push('/');
                         par.push('/');
                     }
+                    if l {
+                        par = getl(par);
+                        cur = getl(cur);
+                    }
                     files.insert(0, par);
                     files.insert(0, cur);
                 }
-
                 if files.is_empty() {
                     rs.push(format!("{}:", dir));
                     continue;
                 }
-
                 let mut output = String::new();
                 if arguments.len() != 1 {
-                    output.push_str(&format!("{}:\n", dir));
-                }
+                    if l{
+                        output.push_str(&format!("{}:\ntotal: {}\n",dir, total_blocks));
+                    }else{
 
+                    }
+                }
                 if l {
                     let mut v = files
                         .clone()
@@ -97,10 +129,9 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         .collect::<Vec<Vec<String>>>();
 
                     output.push_str(&formatls(&mut v).trim_start());
-                } else {
+                }else {
                     output.push_str(&format_columns(files).trim_start());
                 }
-
                 rs.push(output.trim().to_string());
             }
             Err(e) => {
@@ -144,7 +175,11 @@ fn formatls(v: &mut Vec<Vec<String>>) -> String {
                     if i == 4 || i == 1 {
                         format!("{:>width$}", word, width = maxwidths[i])
                     } else {
+                        if i < 9{
                         format!("{:<width$}", word, width = maxwidths[i])
+                        }else{
+                            format!("{:<width$}", word, width = 1)
+                        }
                     }
                 })
                 .collect::<Vec<String>>()
@@ -155,12 +190,12 @@ fn formatls(v: &mut Vec<Vec<String>>) -> String {
 }
 
 fn maxwidths(v: &mut Vec<Vec<String>>) -> Vec<usize> {
-    let mut r = vec![0;9];
-    for   line in v {
+    let mut r = vec![0; 9];
+    for line in v {
         for (i, col) in line.clone().iter().enumerate() {
-            if i == 9{
-                if let Some(extra)= line.pop(){
-                    line[8].push_str(&format!(" {}",extra));
+            if i == 9 {
+                if let Some(extra) = line.pop() {
+                    line[8].push_str(&format!(" {}", extra));
                 }
             }
             if i < r.len() {
@@ -281,10 +316,11 @@ fn mode_string(meta: &std::fs::Metadata) -> String {
     )
 }
 
-fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> String {
+fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata,l:bool) -> String {
     if file_type.is_dir() {
         "/".to_string()
     } else if file_type.is_symlink() {
+        if l {}
         "@".to_string()
     } else if file_type.is_fifo() {
         "|".to_string()
@@ -297,3 +333,24 @@ fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> S
     }
 }
 
+fn getl(s: String) -> String {
+    let meta = fs::symlink_metadata(&s).unwrap();
+    let mode = mode_string(&meta);
+    let nlink = meta.nlink();
+    let uid = meta.uid();
+    let gid = meta.gid();
+    let size = meta.len();
+    let modified: DateTime<Local> = DateTime::from(meta.modified().unwrap());
+    let time_str = modified.format("%b %e %H:%M").to_string();
+    let user = get_user_by_uid(uid)
+        .map(|u| u.name().to_string_lossy().to_string())
+        .unwrap_or(uid.to_string());
+    let group = get_group_by_gid(gid)
+        .map(|g| g.name().to_string_lossy().to_string())
+        .unwrap_or(gid.to_string());
+    format!(
+        "{} {} {} {} {} {} {}",
+        mode, nlink, user, group, size, time_str, s
+    )
+    .to_string()
+}
