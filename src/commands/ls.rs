@@ -26,30 +26,33 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                     a.file_name()
                         .and_then(|s| s.to_str())
                         .map(|s| {
-                            s.trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+                            s.chars()
+                                .filter(|c| c.is_ascii_alphanumeric())
+                                .collect::<String>()
                                 .to_ascii_lowercase()
-                                .to_string()
                         })
                         .cmp(&b.file_name().and_then(|s| s.to_str()).map(|s| {
-                            s.trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+                            s.chars()
+                                .filter(|c| c.is_ascii_alphanumeric())
+                                .collect::<String>()
                                 .to_ascii_lowercase()
-                                .to_string()
                         }))
                 });
-                let total_blocks: u64 = paths.iter()
-                .filter(|entry| {
-                    if let Some(name) = entry.file_name().and_then(|s| s.to_str()) {
-                        a || !name.starts_with('.')
-                    } else {
-                        false
-                    }
-                })
-                .filter_map(|entry| fs::symlink_metadata(entry).ok())
-                .map(|meta| meta.blocks() / 2)
-                .sum();
-            if l && arguments.len() == 1{
-                println!("total {}", total_blocks);
-            }
+                let total_blocks: u64 = paths
+                    .iter()
+                    .filter(|entry| {
+                        if let Some(name) = entry.file_name().and_then(|s| s.to_str()) {
+                            a || !name.starts_with('.')
+                        } else {
+                            false
+                        }
+                    })
+                    .filter_map(|entry| fs::symlink_metadata(entry).ok())
+                    .map(|meta| meta.blocks() / 2)
+                    .sum();
+                if l && arguments.len() == 1 {
+                    println!("total {}", total_blocks);
+                }
                 let mut files: Vec<String> = vec![];
                 for entry in paths {
                     if let Some(filename) = entry.file_name() {
@@ -61,7 +64,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         let mut display = if f {
                             let meta = fs::symlink_metadata(&entry)?;
                             let file_type = meta.file_type();
-                            format!("{}{}", name, classify_suffix(&file_type, &meta,l))
+                            format!("{}{}", name, classify_suffix(&file_type, &meta, l))
                         } else {
                             name.to_string()
                         };
@@ -111,10 +114,9 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                 }
                 let mut output = String::new();
                 if arguments.len() != 1 {
-                    if l{
-                        output.push_str(&format!("{}:\ntotal: {}\n",dir, total_blocks));
-                    }else{
-
+                    if l {
+                        output.push_str(&format!("{}:\ntotal: {}\n", dir, total_blocks));
+                    } else {
                     }
                 }
                 if l {
@@ -129,7 +131,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         .collect::<Vec<Vec<String>>>();
 
                     output.push_str(&formatls(&mut v).trim_start());
-                }else {
+                } else {
                     output.push_str(&format_columns(files).trim_start());
                 }
                 rs.push(output.trim().to_string());
@@ -175,9 +177,9 @@ fn formatls(v: &mut Vec<Vec<String>>) -> String {
                     if i == 4 || i == 1 {
                         format!("{:>width$}", word, width = maxwidths[i])
                     } else {
-                        if i < 9{
-                        format!("{:<width$}", word, width = maxwidths[i])
-                        }else{
+                        if i < 9 {
+                            format!("{:<width$}", word, width = maxwidths[i])
+                        } else {
                             format!("{:<width$}", word, width = 1)
                         }
                     }
@@ -316,7 +318,7 @@ fn mode_string(meta: &std::fs::Metadata) -> String {
     )
 }
 
-fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata,l:bool) -> String {
+fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata, l: bool) -> String {
     if file_type.is_dir() {
         "/".to_string()
     } else if file_type.is_symlink() {
