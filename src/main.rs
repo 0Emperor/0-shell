@@ -13,7 +13,7 @@ fn main() {
             break;
         }
         let mut input = clean_input(&input);
-        if input.is_empty() {
+        if input.is_empty()  || input == "\n"{
             continue;
         }
 
