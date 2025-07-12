@@ -2,16 +2,13 @@ mod commands;
 use commands::*;
 use std::env;
 use std::io::{self, Write};
-pub static mut CURR:String = String::new();
 fn main() {
- 
+    let mut curr: String = String::new();
     loop {
-           unsafe {
-CURR = match std::env::current_dir() {
-        Ok(path) => path.display().to_string(),
-        Err(_) => CURR.clone(),
-    }
-    }
+        curr = match std::env::current_dir() {
+            Ok(path) => path.display().to_string(),
+            Err(_) => curr.clone(),
+        };
         print!("$ ");
         io::stdout().flush().unwrap();
         let mut input = String::new();
@@ -21,7 +18,7 @@ CURR = match std::env::current_dir() {
             break;
         }
         let mut input = clean_input(&input);
-        if input.is_empty()  || input == "\n"{
+        if input.is_empty() || input == "\n" {
             continue;
         }
 
@@ -41,20 +38,20 @@ CURR = match std::env::current_dir() {
         match cmd.command.as_str() {
             "exit" => break,
             "echo" => echo::echo(cmd),
-            "pwd" => pwd::pwd(),
+            "pwd" => println!("{}", curr),
             "mkdir" => mkdir::mkdir(cmd.args),
             "cat" => cat::cat(cmd.args),
             "cp" => cp::cp(cmd.args),
             "cd" => cd::cd(cmd.args),
             "mv" => mv::mv(cmd.args),
             "rm" => rm::rm(cmd.args),
-            "ls" => match ls::ls(cmd.args){
-                Ok(())=>{}
-                Err(e)=>{
-                    println!("{}",e)
+            "ls" => match ls::ls(cmd.args) {
+                Ok(()) => {}
+                Err(e) => {
+                    println!("{}", e)
                 }
             },
-            "clear"=>clear::clear(cmd.args),
+            "clear" => clear::clear(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
