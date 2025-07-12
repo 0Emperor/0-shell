@@ -7,7 +7,7 @@ pub fn rm(args: Vec<String>) {
 
     for arg in &args {
         let arg = arg.as_str();
-        if arg == "-r" {
+        if arg == "-r"  {
             recursive = true;
         } else if !arg.starts_with('-') {
             paths.push(arg);
