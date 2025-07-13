@@ -1,5 +1,25 @@
 use std::fs;
-
+/// Copies a file from source to destination.
+///
+/// # Arguments
+///
+/// * `args` - Vector of arguments where:
+///   - args[0]: source file path
+///   - args[1]: destination file or directory path
+///
+/// # Behavior
+///
+/// - Does not support copying directories recursively.
+/// - If destination is a directory, copies source file inside it.
+/// - Checks and prevents copying a file onto itself.
+/// - Prints errors on failure.
+///
+/// # Example
+///
+/// ```
+/// cp(vec!["file.txt".to_string(), "backup/".to_string()]);
+/// cp(vec!["file.txt".to_string(), "copy.txt".to_string()]);
+/// ```
 pub fn cp(args: Vec<String>) {
     if args.len() != 2 {
         eprintln!("cp: missing source or destination");

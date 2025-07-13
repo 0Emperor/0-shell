@@ -3,7 +3,34 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::{fs, io};
 use terminal_size::{terminal_size, Width};
 use users::{get_group_by_gid, get_user_by_uid};
-
+/// Lists directory contents with support for common flags.
+///
+/// # Arguments
+///
+/// * `dirs` - Vector of directory paths or flags (e.g., `["-l", ".", "src"]`).
+///
+/// # Supported flags
+///
+/// - `-a` : Include hidden files (starting with `.`).
+/// - `-l` : Long format listing with detailed metadata.
+/// - `-F` : Append file-type suffixes (`/`, `*`, `@`, etc.).
+///
+/// # Behavior
+///
+/// - If no directories specified, lists current directory.
+/// - Sorts files case-insensitively.
+/// - For `-l` flag, prints total blocks and detailed metadata.
+/// - Handles multiple directories, printing errors for inaccessible ones.
+///
+/// # Returns
+///
+/// Returns `io::Result<()>` to allow propagation of I/O errors.
+///
+/// # Example
+///
+/// ```
+/// ls(vec!["-la".to_string(), ".".to_string()]).unwrap();
+/// ```
 pub fn ls(dirs: Vec<String>) -> io::Result<()> {
     let mut rs = vec![];
     let mut ers = vec![];

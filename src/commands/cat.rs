@@ -1,5 +1,22 @@
 use std::fs;
 use std::io;
+/// Prints the contents of files to standard output, or reads from stdin if no files provided.
+///
+/// # Arguments
+///
+/// * `args` - Vector of filenames. If empty, reads from stdin.
+///
+/// # Behavior
+///
+/// - Reads and prints entire file content for each file argument.
+/// - If no files are given, reads lines from stdin and prints them until EOF.
+///
+/// # Example
+///
+/// ```
+/// cat(vec!["file.txt".to_string()]);
+/// cat(vec![]); // reads from stdin
+/// ```
 pub fn cat(args:Vec<String>){
     for file in &args {
             match fs::read_to_string(&file){

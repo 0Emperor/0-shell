@@ -1,4 +1,23 @@
 use std::env;
+/// Changes the current working directory.
+///
+/// # Arguments
+///
+/// * `args` - Vector of arguments:
+///   - If empty, changes to directory specified by $HOME.
+///   - If contains exactly one element, changes to that directory.
+///   - Otherwise, prints an error.
+///
+/// # Behavior
+///
+/// - Prints errors if changing directory fails or usage is incorrect.
+///
+/// # Example
+///
+/// ```
+/// cd(vec![]); // changes to $HOME
+/// cd(vec!["/tmp".to_string()]); // changes to /tmp
+/// ```
 pub fn cd(args: Vec<String>) {
     if args.is_empty() {
         if let Some(h) = env::var_os("HOME") {

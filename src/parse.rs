@@ -1,13 +1,42 @@
 use std::env;
+/// Represents a parsed command from user input.
 #[derive(Debug)]
 pub struct Cmd {
+    /// The command name (e.g., "ls", "echo")
     pub command: String,
+    /// The arguments passed to the command (excluding the command itself)
     pub args: Vec<String>,
 }
+
+/// Removes ANSI escape sequences used for cursor movement from the input.
+///
+/// # Example
+/// ```
+/// let input = "\x1B[A";
+/// let cleaned = clean_input(input);
+/// assert_eq!(cleaned, "");
+/// ```
 pub fn clean_input(input: &str) -> String {
     let re = regex::Regex::new(r"\x1B\[[A-D]").unwrap();
     re.replace_all(input, "").to_string()
 }
+/// Parses a user input string into a structured `Cmd` object.
+///
+/// Supports:
+/// - Single and double quoting
+/// - Environment variable expansion: `$VAR`, `${VAR}`
+/// - Home directory expansion: `~`
+///
+/// # Errors
+///
+/// Returns `Err(1)` if there's an unmatched quote.
+///
+/// # Example
+/// ```
+/// let cmd = split("echo \"$HOME\"").unwrap();
+/// assert_eq!(cmd.command, "echo");
+/// assert_eq!(cmd.args, vec![std::env::var("HOME").unwrap()]);
+/// ```
 pub fn split(input: &str) -> Result<Cmd, u8> {
     let mut tokens = Vec::new();
     let mut current = String::new();
