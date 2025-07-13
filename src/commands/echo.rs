@@ -1,4 +1,28 @@
 use crate::Cmd;
+/// Prints the arguments to stdout with escape sequence interpretation.
+///
+/// Supported escape sequences:
+/// - `\n`: newline
+/// - `\t`: tab
+/// - `\r`: carriage return
+/// - `\\`: backslash
+/// - `\"`: double quote
+/// - `\'`: single quote
+/// - `\c`: stop output immediately
+///
+/// # Arguments
+///
+/// * `cmd` - Cmd struct containing the command name and arguments.
+///
+/// # Example
+///
+/// ```
+/// let cmd = Cmd {
+///     command: "echo".to_string(),
+///     args: vec!["hello\\nworld".to_string()],
+/// };
+/// echo(cmd);
+/// ```
 pub fn echo(cmd: Cmd) {
     for (arg_index, arg) in cmd.args.iter().enumerate() {
         let mut chars = arg.chars().peekable();
