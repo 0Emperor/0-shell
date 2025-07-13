@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 // use std::path::Path;
 /// Moves or renames files and directories.
 ///
@@ -22,51 +22,74 @@ use std::fs;
 /// ```
 pub fn mv(args: Vec<String>) {
     if args.len() < 2 {
-        println!("missing file operand or destination");
+        eprintln!("mv: missing file operand or destination");
         return;
     }
-    // let dst = &args[args.len() - 1];
-    // let dst_path = Path::new(dst);
-    let dst = match fs::canonicalize(&args[args.len() - 1]) {
-        Ok(d) => d,
-        Err(e) => {
-            println!("{}", e);
-            return;
+
+    let source_paths: Vec<&Path> = args[0..args.len() - 1].iter().map(Path::new).collect();
+    let dest_path = Path::new(&args[args.len() - 1]);
+
+    let handle_rename = |res: Result<(), std::io::Error>, src_disp: &str, dest_disp: &str| {
+        if let Err(e) = res {
+            eprintln!("mv: cannot move '{}' to '{}': {}", src_disp, dest_disp, e);
+            return false;
         }
+        true
     };
 
-    // println!("abs path:{} -- {}", dst.is, dst_path.display());
-
-    if args.len() > 2 {
-        if !dst.is_dir() {
-            println!("target {} is not a directory", dst.display());
+    if source_paths.len() > 1 {
+        if !dest_path.is_dir() {
+            eprintln!("mv: target '{}' is not a directory", dest_path.display());
             return;
         }
-    } else if !dst.exists() {
-        match fs::rename(args[0].clone(), dst.clone()) {
-            Ok(_) => println!("I am worked, {} {}", args[0], dst.display()),
-            Err(e) => eprintln!("Error: {}", e),
-        }
-        return;
-    }
 
-    for arg in args[0..args.len() - 1].iter() {
-        let file = match fs::canonicalize(arg) {
-            Ok(d) => d,
-            Err(e) => {
-                println!("{}", e);
+        for src_path in source_paths {
+            let file_name = match src_path.file_name() {
+                Some(name) => name,
+                None => {
+                    eprintln!(
+                        "mv: cannot stat '{}': No such file or directory",
+                        src_path.display()
+                    );
+                    return;
+                }
+            };
+            let final_dest = dest_path.join(file_name);
+
+            if !handle_rename(
+                fs::rename(src_path, &final_dest),
+                &src_path.to_string_lossy(),
+                &final_dest.to_string_lossy(),
+            ) {
                 return;
             }
-        };
-        match fs::rename(
-            file.clone(),
-            format!("{}/{}", dst.display(), file.display()),
-        ) {
-            Ok(_) => println!("I am worked, {arg} {}", dst.display()),
-            Err(e) => {
-                println!("{} | {}", dst.display(), file.display());
-                eprintln!("Error: {}", e)
-            }
+        }
+    } else {
+        let src_path = source_paths[0];
+
+        if dest_path.is_dir() {
+            let file_name = match src_path.file_name() {
+                Some(name) => name,
+                None => {
+                    eprintln!(
+                        "mv: cannot stat '{}': No such file or directory",
+                        src_path.display()
+                    );
+                    return;
+                }
+            };
+            let final_dest = dest_path.join(file_name);
+            handle_rename(
+                fs::rename(src_path, &final_dest),
+                &src_path.to_string_lossy(),
+                &final_dest.to_string_lossy(),
+            );
+        } else {
+            handle_rename(
+                fs::rename(src_path, dest_path),
+                &src_path.to_string_lossy(),
+                &dest_path.to_string_lossy(),
+            );
         }
     }
 }
