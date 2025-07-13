@@ -1,7 +1,7 @@
 mod commands;
 mod parse;
-use parse::*;
 use commands::*;
+use parse::*;
 use std::io::{self, Write};
 // Entry point of the custom shell.
 //
@@ -17,14 +17,14 @@ use std::io::{self, Write};
 
 /// Starts the shell loop.
 fn main() {
- let  mut curr = match std::env::current_dir() {
+    let mut curr = match std::env::current_dir() {
         Ok(path) => path.display().to_string(),
         Err(_) => String::new(),
     };
     loop {
- if let Ok(p) =std::env::current_dir(){
-curr=p.display().to_string();
- } 
+        if let Ok(p) = std::env::current_dir() {
+            curr = p.display().to_string();
+        }
 
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -35,7 +35,7 @@ curr=p.display().to_string();
             break;
         }
         let mut input = clean_input(&input);
-        if input.is_empty()  || input == "\n"{
+        if input.is_empty() || input == "\n" {
             continue;
         }
 
@@ -54,7 +54,7 @@ curr=p.display().to_string();
         };
         match cmd.command.as_str() {
             "exit" => break,
-            "echo" => echo::echo(cmd),
+            "echo" => echo::echo(input.trim()),
             "pwd" => pwd::pwd(&curr),
             "mkdir" => mkdir::mkdir(cmd.args),
             "cat" => cat::cat(cmd.args),
@@ -68,10 +68,9 @@ curr=p.display().to_string();
                     println!("{}",e)
                 }
             },
-            "clear"=>clear::clear(cmd.args),
+            "clear" => clear::clear(cmd.args),
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
     println!("good bye, we wont miss you.");
 }
-

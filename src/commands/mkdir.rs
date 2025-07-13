@@ -21,8 +21,8 @@ pub fn mkdir(args:Vec<String>){
                  eprintln!("mkdir: missing argupments")
     }
     for dir in args {
-        if let Err(e)= fs::create_dir(&dir){
-             eprintln!("mkdir: {dir}: {e}")
+        if let Err(e) = fs::create_dir(&dir) {
+            eprintln!("mkdir: {dir}: {e}, {}", e.kind())
         }
     }
 }
