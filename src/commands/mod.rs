@@ -3,7 +3,7 @@ pub mod cd;
 pub mod cp;
 pub mod echo;
 pub mod clear;
-pub mod ls;
+pub mod  ls_test;
 pub mod mkdir;
 pub mod mv;
 pub mod pwd;

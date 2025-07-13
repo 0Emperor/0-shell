@@ -62,7 +62,7 @@ curr=p.display().to_string();
             "cd" => cd::cd(cmd.args),
             "mv" => mv::mv(cmd.args),
             "rm" => rm::rm(cmd.args),
-            "ls" => match ls::ls(cmd.args){
+            "ls" => match ls_test::ls(cmd.args){
                 Ok(())=>{}
                 Err(e)=>{
                     println!("{}",e)

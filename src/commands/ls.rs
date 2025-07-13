@@ -50,17 +50,28 @@ let f = flags[0];
                 let mut paths = entries
                     .map(|res| res.map(|e| e.path()))
                     .collect::<Result<Vec<_>, io::Error>>()?;
-               paths.sort_by(|a, b| {
-    a.file_name()
+        paths.sort_by(|a, b| {
+    let a_name = a.file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase()
-        .cmp(
-            &b.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase(),
-        )
+        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+        .unwrap_or_default();
+    let b_name = b.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+        .unwrap_or_default();
+    
+    a_name.cmp(&b_name).then_with(|| {
+        a.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_lowercase()
+            .cmp(
+                &b.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_lowercase()
+            )
+    })
 });
                 let total_blocks: u64 = paths
                     .iter()

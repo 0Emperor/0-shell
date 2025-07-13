@@ -53,12 +53,29 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
                 let mut paths: Vec<PathBuf> =
                     entries.filter_map(Result::ok).map(|e| e.path()).collect();
 
-                paths.sort_by_key(|a| {
-                    a.file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("")
-                        .to_ascii_lowercase()
-                });
+       paths.sort_by(|a, b| {
+    let a_name = a.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+        .unwrap_or_default();
+    let b_name = b.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+        .unwrap_or_default();
+    
+    a_name.cmp(&b_name).then_with(|| {
+        a.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_lowercase()
+            .cmp(
+                &b.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_lowercase()
+            )
+    })
+});
 
                 let mut file_infos = Vec::new();
                 if show_hidden {
