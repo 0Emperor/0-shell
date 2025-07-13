@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+// use std::path::Path;
 /// Moves or renames files and directories.
 ///
 /// # Arguments
@@ -25,27 +25,48 @@ pub fn mv(args: Vec<String>) {
         println!("missing file operand or destination");
         return;
     }
-    let dst = &args[args.len() - 1];
-    let dst_path = Path::new(dst);
-
-    if args.len() > 2 {
-        if !dst_path.is_dir() {
-            println!("target {dst} is not a directory");
+    // let dst = &args[args.len() - 1];
+    // let dst_path = Path::new(dst);
+    let dst = match fs::canonicalize(&args[args.len() - 1]) {
+        Ok(d) => d,
+        Err(e) => {
+            println!("{}", e);
             return;
         }
-    } else if !dst_path.exists() {
-        match fs::rename(args[0].clone(), dst) {
-            Ok(_) => println!("I am worked, {} {dst}", args[0]),
+    };
+
+    // println!("abs path:{} -- {}", dst.is, dst_path.display());
+
+    if args.len() > 2 {
+        if !dst.is_dir() {
+            println!("target {} is not a directory", dst.display());
+            return;
+        }
+    } else if !dst.exists() {
+        match fs::rename(args[0].clone(), dst.clone()) {
+            Ok(_) => println!("I am worked, {} {}", args[0], dst.display()),
             Err(e) => eprintln!("Error: {}", e),
         }
         return;
     }
 
     for arg in args[0..args.len() - 1].iter() {
-        match fs::rename(arg, format!("{dst}/{arg}")) {
-            Ok(_) => println!("I am worked, {arg} {dst}"),
-            Err(e) => eprintln!("Error: {}", e),
+        let file = match fs::canonicalize(arg) {
+            Ok(d) => d,
+            Err(e) => {
+                println!("{}", e);
+                return;
+            }
+        };
+        match fs::rename(
+            file.clone(),
+            format!("{}/{}", dst.display(), file.display()),
+        ) {
+            Ok(_) => println!("I am worked, {arg} {}", dst.display()),
+            Err(e) => {
+                println!("{} | {}", dst.display(), file.display());
+                eprintln!("Error: {}", e)
+            }
         }
     }
 }
-
