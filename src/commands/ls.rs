@@ -34,8 +34,9 @@ use users::{get_group_by_gid, get_user_by_uid};
 pub fn ls(dirs: Vec<String>) -> io::Result<()> {
     let mut rs = vec![];
     let mut ers = vec![];
-    let (mut arguments, flags) = filter_flags(dirs.clone());
-    let f = flags[0];
+    match filter_flags(dirs.clone()){
+        Some((mut arguments, flags))=>{
+let f = flags[0];
     let a = flags[1];
     let l = flags[2];
 
@@ -179,6 +180,13 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
         }
     }
     Ok(())
+        }
+        _=>{
+            println!("ls: invalid flag");
+Ok(())
+        }
+    }
+    
 }
 
 fn formatls(v: &mut Vec<Vec<String>>) -> String {
@@ -283,7 +291,7 @@ fn format_columns(items: Vec<String>) -> String {
     output.trim_end().to_string()
 }
 
-pub fn filter_flags(dirs: Vec<String>) -> (Vec<String>, Vec<bool>) {
+pub fn filter_flags(dirs: Vec<String>) -> Option<(Vec<String>, Vec<bool>)>{
     let mut args = vec![];
     let mut flags = vec![false; 3];
     for arg in dirs {
@@ -299,9 +307,18 @@ pub fn filter_flags(dirs: Vec<String>) -> (Vec<String>, Vec<bool>) {
             if arg.contains('l') {
                 flags[2] = true;
             }
+let mut c: u8 =0; 
+       while c <=127 {
+        if c as char !='F' && c as char !='l'&& c as char !='a'{
+        if arg[1..].contains(c as char){
+return  None;
+        }
+        }
+        c+=1;
+       }
         }
     }
-    (args, flags)
+   Some ((args, flags))
 }
 
 fn mode_string(meta: &std::fs::Metadata) -> String {
