@@ -16,6 +16,7 @@ struct FileInfo {
     size_or_device: SizeOrDevice,
     modified_time: String,
     name: String,
+    path: PathBuf,
 }
 
 enum SizeOrDevice {
@@ -40,73 +41,96 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
     let mut output_sections = Vec::new();
     let mut error_messages = Vec::new();
 
-    for (i, dir_path) in effective_dirs.iter().enumerate() {
+    for (i, dir_path_str) in effective_dirs.iter().enumerate() {
         if effective_dirs.len() > 1 {
             if i > 0 {
                 output_sections.push(String::new());
             }
-            output_sections.push(format!("{}:", dir_path));
+            output_sections.push(format!("{}:", dir_path_str));
         }
 
+        let dir_path = Path::new(dir_path_str);
         match fs::read_dir(dir_path) {
             Ok(entries) => {
+                let mut file_infos = Vec::new();
+
+                if show_hidden {
+                    if let Ok(info) = get_file_info(dir_path, classify, long_format, Some(dir_path_str)) {
+                        file_infos.push(info);
+                    }
+                    if let Ok(info) = get_file_info(&dir_path.join(".."), classify, long_format, Some(dir_path_str)) {
+                        file_infos.push(info);
+                    }
+                }
+
                 let mut paths: Vec<PathBuf> =
                     entries.filter_map(Result::ok).map(|e| e.path()).collect();
 
-       paths.sort_by(|a, b| {
-    let a_name = a.file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
-        .unwrap_or_default();
-    let b_name = b.file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
-        .unwrap_or_default();
-    
-    a_name.cmp(&b_name).then_with(|| {
-        a.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_lowercase()
-            .cmp(
-                &b.file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default()
-                    .to_lowercase()
-            )
-    })
-});
+                paths.sort_by(|a, b| {
+                    let a_name = a.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+                        .unwrap_or_default();
+                    let b_name = b.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+                        .unwrap_or_default();
 
-                let mut file_infos = Vec::new();
-                if show_hidden {
-                    if long_format {
-                        if let Ok(info) = get_file_info(&Path::new(dir_path).join("."), classify) {
-                            file_infos.push(info);
-                        }
-                        if let Ok(info) = get_file_info(&Path::new(dir_path).join(".."), classify) {
-                            file_infos.push(info);
-                        }
-                    }
-                }
+                    a_name.cmp(&b_name).then_with(|| {
+                        a.file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or_default()
+                            .to_lowercase()
+                            .cmp(
+                                &b.file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or_default()
+                                    .to_lowercase()
+                            )
+                    })
+                });
 
                 for path in &paths {
-                    if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                        if !show_hidden && filename.starts_with('.') {
+                     if let Ok(info) = get_file_info(path, classify, long_format, Some(dir_path_str)) {
+                        if !show_hidden && info.name.starts_with('.') {
                             continue;
                         }
-                        if let Ok(info) = get_file_info(path, classify) {
-                            file_infos.push(info);
-                        }
+                        file_infos.push(info);
                     }
                 }
 
+                file_infos.sort_by(|a, b| {
+                    let a_is_dot = a.name == "." || a.name == "./";
+                    let b_is_dot = b.name == "." || b.name == "./";
+                    let a_is_dotdot = a.name == ".." || a.name == "../";
+                    let b_is_dotdot = b.name == ".." || b.name == "../";
+
+                    if a_is_dot { return std::cmp::Ordering::Less; }
+                    if b_is_dot { return std::cmp::Ordering::Greater; }
+                    if a_is_dotdot {
+                         return if b_is_dot { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                    }
+                    if b_is_dotdot {
+                         return if a_is_dot { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                    }
+
+                    let a_name_sort = a.path.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+                        .unwrap_or_default();
+                    let b_name_sort = b.path.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+                        .unwrap_or_default();
+
+                    a_name_sort.cmp(&b_name_sort)
+                });
+
+
                 if long_format {
-                    let total_blocks: u64 = file_infos
+                     let total_blocks: u64 = file_infos
                         .iter()
-                        .filter_map(|fi| {
-                            let first_part = fi.name.split(' ').next().unwrap_or("");
-                            fs::symlink_metadata(Path::new(dir_path).join(first_part)).ok()
-                        })
+                        .filter_map(|info| fs::symlink_metadata(&info.path).ok())
                         .map(|m| m.blocks())
                         .sum();
 
@@ -118,7 +142,7 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
                 }
             }
             Err(e) => {
-                error_messages.push(format!("ls: cannot access '{}': {}", dir_path, e.kind()));
+                error_messages.push(format!("ls: cannot access '{}': {}", dir_path_str, e.kind()));
             }
         }
     }
@@ -126,33 +150,63 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
     if !error_messages.is_empty() {
         println!("{}", error_messages.join("\n"));
     }
-    if !output_sections.is_empty() {
-        println!("{}", output_sections.join("\n"));
+    for (idx, section) in output_sections.iter().enumerate() {
+        if idx > 0 {
+            println!();
+        }
+        print!("{}", section);
     }
+    println!();
 
     Ok(())
 }
 
-fn get_file_info(path: &Path, classify: bool) -> io::Result<FileInfo> {
+
+
+fn get_file_info(path: &Path, classify: bool, long_format: bool, original_dir: Option<&str>) -> io::Result<FileInfo> {
     let meta = fs::symlink_metadata(path)?;
     let file_type = meta.file_type();
 
-    let name_os_str = path.file_name();
-    let mut name = name_os_str.and_then(|s| s.to_str()).unwrap_or("").to_string();
-
-    if path.to_str() == Some(".") { name = ".".to_string(); }
-    if path.to_str() == Some("..") { name = "..".to_string(); }
-
+    let mut name = if Some(path.to_str().unwrap_or_default()) == original_dir {
+        ".".to_string()
+    } else if path.to_str().map_or(false, |s| s.ends_with("/..")) {
+        "..".to_string()
+    } else {
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string()
+    };
 
     if classify {
-        name.push_str(&classify_suffix(&file_type, &meta));
-    }
-
-    if file_type.is_symlink() {
-        if let Ok(target) = fs::read_link(path) {
-            name.push_str(&format!(" -> {}", target.display()));
+        if file_type.is_dir() {
+            name.push('/');
+        } else if file_type.is_symlink() {
+            if !long_format {
+                name.push('@');
+            }
+        } else {
+            name.push_str(&classify_suffix(&file_type, &meta));
         }
     }
+
+    if long_format && file_type.is_symlink() {
+        if let Ok(target_path) = fs::read_link(path) {
+            let mut target_display = target_path.to_string_lossy().to_string();
+
+            if classify {
+                if let Ok(target_meta) = fs::metadata(&target_path) {
+                    let target_type = target_meta.file_type();
+                    if target_type.is_dir() {
+                        target_display.push('/');
+                    } else if target_type.is_socket() {
+                        target_display.push('=');
+                    } else if target_type.is_fifo() {
+                        target_display.push('|');
+                    }
+                }
+            }
+            name.push_str(&format!(" -> {}", target_display));
+        }
+    }
+
 
     let size_or_device = if file_type.is_block_device() || file_type.is_char_device() {
         SizeOrDevice::Device {
@@ -177,6 +231,7 @@ fn get_file_info(path: &Path, classify: bool) -> io::Result<FileInfo> {
         size_or_device,
         modified_time: modified.format("%b %e %H:%M").to_string(),
         name,
+        path: path.to_path_buf(),
     })
 }
 
@@ -312,11 +367,15 @@ fn mode_string(meta: &std::fs::Metadata, path: &Path) -> String {
     format!("{}{}", base_mode, acl_char)
 }
 
+
+
 fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> String {
+    if file_type.is_symlink() {
+        return "@".to_string();
+    }
+    
     if file_type.is_dir() {
         "/".to_string()
-    } else if file_type.is_symlink() {
-        "".to_string()
     } else if file_type.is_fifo() {
         "|".to_string()
     } else if file_type.is_socket() {
@@ -327,7 +386,6 @@ fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> S
         "".to_string()
     }
 }
-
 pub fn filter_flags(args: Vec<String>) -> Option<(Vec<String>, bool, bool, bool)> {
     let mut directories = vec![];
     let mut show_hidden = false;
@@ -419,5 +477,6 @@ fn format_columns(items: Vec<String>) -> String {
         }
         output.push('\n');
     }
+
     output.trim_end().to_string()
 }
