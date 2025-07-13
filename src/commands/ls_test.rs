@@ -32,7 +32,7 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
             return Ok(());
         }
     };
-
+let mut eh = false;
     let mut effective_dirs = directories.clone();
     if effective_dirs.is_empty() {
         effective_dirs.push(".".to_string());
@@ -40,20 +40,26 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
 
     let mut output_sections = Vec::new();
     let mut error_messages = Vec::new();
+    let mut files_out = Vec::new();
 
     for (i, dir_path_str) in effective_dirs.iter().enumerate() {
         if effective_dirs.len() > 1 {
             if i > 0 {
                 output_sections.push(String::new());
             }
-            output_sections.push(format!("{}:", dir_path_str));
         }
 
         let dir_path = Path::new(dir_path_str);
         match fs::read_dir(dir_path) {
             Ok(entries) => {
                 let mut file_infos = Vec::new();
+                if eh {
+                                output_sections.push(format!("\n{}:", dir_path_str));
 
+                }else{
+            output_sections.push(format!("{}:", dir_path_str));
+            eh = true
+                }
                 if show_hidden {
                     if let Ok(info) = get_file_info(dir_path, classify, long_format, Some(dir_path_str)) {
                         file_infos.push(info);
@@ -142,7 +148,23 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
                 }
             }
             Err(e) => {
-                error_messages.push(format!("ls: cannot access '{}': {}", dir_path_str, e.kind()));
+            
+if e.kind().to_string()== "not a directory"{
+                    let mut file_infos = Vec::new();
+                    if let Ok(info) = get_file_info(dir_path, classify, long_format, None) {
+                        file_infos.push(info);
+                    }
+                if long_format {
+                    files_out.push(format_long_columns(file_infos));
+                } else {
+                
+                    let names = file_infos.into_iter().map(|fi| {
+                        fi.name}).collect();
+                    files_out.push(format_columns(names));
+                } 
+            }else{
+                    error_messages.push(format!("ls: cannot access '{}': {}", dir_path_str, e.kind()));
+}
             }
         }
     }
@@ -150,14 +172,15 @@ pub fn ls(args: Vec<String>) -> io::Result<()> {
     if !error_messages.is_empty() {
         println!("{}", error_messages.join("\n"));
     }
-    for (idx, section) in output_sections.iter().enumerate() {
-        if idx > 0 {
-            println!();
-        }
-        print!("{}", section);
-    }
+   if ! files_out.is_empty() {
+println!("{}",if long_format {files_out.join("\n")}else{files_out.join(" ")});
+   }
+   if !output_sections.is_empty() && (!files_out.is_empty()||!error_messages.is_empty()){
     println!();
-
+   }
+    for (_, section) in output_sections.iter().filter(|a| !a.is_empty()).enumerate() {
+        println!("{}", section);
+    }
     Ok(())
 }
 
@@ -174,7 +197,7 @@ fn get_file_info(path: &Path, classify: bool, long_format: bool, original_dir: O
     } else {
         path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string()
     };
-
+name= if should_be_in_quotes(&name){format!("\'{}\'",name)}else{name};
     if classify {
         if file_type.is_dir() {
             name.push('/');
@@ -294,13 +317,34 @@ fn format_long_columns(infos: Vec<FileInfo>) -> String {
             }
         };
         output.push_str(&size_str);
+                        println!("{} ",info.name);
 
-        output.push_str(&format!(" {} {}\n", info.modified_time, info.name));
+        output.push_str(&format!(" {} {}\n", info.modified_time, if should_be_in_quotes(&info.name){format!("\'{}\'",info.name)}else{info.name}));
     }
 
     output.trim_end().to_string()
 }
+fn should_be_in_quotes(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
 
+    for c in s.chars() {
+        if c.is_whitespace() || c.is_control() {
+            return true;
+        }
+
+        match c {
+            '*' | '?' | '[' | ']' | '{' | '}' |
+            '(' | ')' | '\''| '"' | ';' | '&' |
+            '|' | '<' | '>' | '$' | '\\' | '`' |
+            '~' | '!' => return true,
+            _ => {}
+        }
+    }
+
+    false
+}
 fn mode_string(meta: &std::fs::Metadata, path: &Path) -> String {
     let mode = meta.mode();
     let file_type = meta.file_type();
