@@ -1,5 +1,3 @@
-pub fn pwd() {
-    unsafe {
-        println!("{}", crate::CURR);
-    }
+pub fn pwd(cdir :&String) {
+        println!("{}", cdir);
 }

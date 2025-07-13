@@ -22,22 +22,18 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                 let mut paths = entries
                     .map(|res| res.map(|e| e.path()))
                     .collect::<Result<Vec<_>, io::Error>>()?;
-                paths.sort_by(|a, b| {
-                    a.file_name()
-                        .and_then(|s| s.to_str())
-                        .map(|s| {
-                            s.chars()
-                                .filter(|c| c.is_ascii_alphanumeric())
-                                .collect::<String>()
-                                .to_ascii_lowercase()
-                        })
-                        .cmp(&b.file_name().and_then(|s| s.to_str()).map(|s| {
-                            s.chars()
-                                .filter(|c| c.is_ascii_alphanumeric())
-                                .collect::<String>()
-                                .to_ascii_lowercase()
-                        }))
-                });
+               paths.sort_by(|a, b| {
+    a.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .cmp(
+            &b.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase(),
+        )
+});
                 let total_blocks: u64 = paths
                     .iter()
                     .filter(|entry| {
@@ -68,7 +64,6 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                         } else {
                             name.to_string()
                         };
-
                         if l {
                             let meta = fs::symlink_metadata(&entry)?;
                             let mode = mode_string(&meta);
@@ -84,13 +79,16 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                             let group = get_group_by_gid(gid)
                                 .map(|g| g.name().to_string_lossy().to_string())
                                 .unwrap_or(gid.to_string());
-
+                                if meta.file_type().is_symlink() {
+                                    if let Ok(target) = fs::read_link(&entry) {
+                                        display.push_str(&format!(" -> {}",target.display()));
+                                    }
+                                }
                             display = format!(
                                 "{} {} {} {} {} {} {}",
                                 mode, nlink, user, group, size, time_str, display
                             );
                         }
-
                         files.push(display);
                     }
                 }
@@ -120,15 +118,7 @@ pub fn ls(dirs: Vec<String>) -> io::Result<()> {
                     }
                 }
                 if l {
-                    let mut v = files
-                        .clone()
-                        .into_iter()
-                        .map(|x| {
-                            x.split_whitespace()
-                                .map(|e| e.to_string())
-                                .collect::<Vec<String>>()
-                        })
-                        .collect::<Vec<Vec<String>>>();
+                    let mut v = splitforl(files);
 
                     output.push_str(&formatls(&mut v).trim_start());
                 } else {
@@ -288,32 +278,60 @@ pub fn filter_flags(dirs: Vec<String>) -> (Vec<String>, Vec<bool>) {
 }
 
 fn mode_string(meta: &std::fs::Metadata) -> String {
-    let file_type = meta.file_type();
     let mode = meta.mode();
+    let file_type = meta.file_type();
     let file_type_char = if file_type.is_dir() {
         'd'
     } else if file_type.is_symlink() {
         'l'
+    } else if file_type.is_fifo() {
+        'p'
+    } else if file_type.is_socket() {
+        's'
+    } else if file_type.is_block_device() {
+        'b'
+    } else if file_type.is_char_device() {
+        'c'
     } else {
         '-'
     };
 
-    let u = ((mode >> 6) & 0b111) as u8;
-    let g = ((mode >> 3) & 0b111) as u8;
-    let o = (mode & 0b111) as u8;
+    let usr = (mode >> 6) & 0b111;
+    let grp = (mode >> 3) & 0b111;
+    let oth = mode & 0b111;
 
-    format!(
-        "{}{}{}{}{}{}{}{}{}",
-        file_type_char,
-        if u & 0b100 != 0 { 'r' } else { '-' },
-        if u & 0b010 != 0 { 'w' } else { '-' },
-        if u & 0b001 != 0 { 'x' } else { '-' },
-        if g & 0b100 != 0 { 'r' } else { '-' },
-        if g & 0b010 != 0 { 'w' } else { '-' },
-        if g & 0b001 != 0 { 'x' } else { '-' },
-        if o & 0b100 != 0 { 'r' } else { '-' },
-        if o & 0b010 != 0 { 'w' } else { '-' },
-    )
+    let suid = (mode & 0o4000) != 0;
+    let sgid = (mode & 0o2000) != 0;
+    let sticky = (mode & 0o1000) != 0;
+
+    let ur = if usr & 0b100 != 0 { 'r' } else { '-' };
+    let uw = if usr & 0b010 != 0 { 'w' } else { '-' };
+    let ux = match (usr & 0b001 != 0, suid) {
+        (true, true) => 's',
+        (false, true) => 'S',
+        (true, false) => 'x',
+        (false, false) => '-',
+    };
+
+    let gr = if grp & 0b100 != 0 { 'r' } else { '-' };
+    let gw = if grp & 0b010 != 0 { 'w' } else { '-' };
+    let gx = match (grp & 0b001 != 0, sgid) {
+        (true, true) => 's',
+        (false, true) => 'S',
+        (true, false) => 'x',
+        (false, false) => '-',
+    };
+
+    let or = if oth & 0b100 != 0 { 'r' } else { '-' };
+    let ow = if oth & 0b010 != 0 { 'w' } else { '-' };
+    let ox = match (oth & 0b001 != 0, sticky) {
+        (true, true) => 't',
+        (false, true) => 'T',
+        (true, false) => 'x',
+        (false, false) => '-',
+    };
+
+    format!("{}{}{}{}{}{}{}{}{}{}", file_type_char, ur, uw, ux, gr, gw, gx, or, ow, ox)
 }
 
 fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata, l: bool) -> String {
@@ -354,3 +372,24 @@ fn getl(s: String) -> String {
     )
     .to_string()
 }
+fn splitforl(files: Vec<String>)-> Vec<Vec<String>>{
+    let mut r = vec![];
+    for file in files{
+        let mut chob = vec![];
+        let mut st = String::new();
+        for (i,c) in file.chars().enumerate(){
+            if chob.len() == 8{
+                chob.push(file[i..].to_string());
+                break
+            }
+            if c == ' ' {
+                chob.push(st);
+                st = String::new();
+            }else{
+                st.push(c);
+            }
+        }
+        r.push(chob)
+    }
+    r
+ } 
