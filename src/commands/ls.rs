@@ -315,22 +315,21 @@ fn get_file_info(
     if long_format && file_type.is_symlink() {
         if let Ok(target_path) = fs::read_link(path) {
             let mut target_display = target_path.to_string_lossy().to_string();
-
+    
             if classify {
-                if let Ok(target_meta) = fs::metadata(&target_path) {
-                    let target_type = target_meta.file_type();
-                    if target_type.is_dir() {
-                        target_display.push('/');
-                    } else if target_type.is_socket() {
-                        target_display.push('=');
-                    } else if target_type.is_fifo() {
-                        target_display.push('|');
+                if let Some(parent) = path.parent() {
+                    let abs_target = parent.join(&target_path);
+                    if let Ok(target_meta) = fs::metadata(&abs_target) {
+                        let target_type = target_meta.file_type();
+                        target_display.push_str(&classify_suffix(&target_type, &target_meta));
                     }
                 }
             }
+    
             name.push_str(&format!(" -> {}", target_display));
         }
     }
+    
 
     let size_or_device = if file_type.is_block_device() || file_type.is_char_device() {
         SizeOrDevice::Device {
@@ -342,6 +341,12 @@ fn get_file_info(
     };
 
     let modified: DateTime<Local> = DateTime::from(meta.modified()?);
+    let now = Local::now();
+
+    let duration = now.signed_duration_since(modified);
+
+    let six_months = chrono::Duration::days(30 * 6);
+    let show_time = duration < six_months && duration.num_seconds() >= 0;
 
     Ok(FileInfo {
         permissions: mode_string(&meta, path),
@@ -353,7 +358,11 @@ fn get_file_info(
             .map(|g| g.name().to_string_lossy().into_owned())
             .unwrap_or_else(|| meta.gid().to_string()),
         size_or_device,
-        modified_time: modified.format("%b %e %H:%M").to_string(),
+        modified_time: if show_time {
+            modified.format("%b %e %H:%M").to_string()
+        } else {
+            modified.format("%b %e %Y").to_string()
+        },
         name,
         path: path.to_path_buf(),
     })
@@ -423,6 +432,7 @@ fn format_long_columns(infos: Vec<FileInfo>) -> String {
 
     output.trim_end().to_string()
 }
+
 fn should_be_in_quotes(s: &str) -> bool {
     if s.is_empty() {
         return true;
@@ -442,6 +452,7 @@ fn should_be_in_quotes(s: &str) -> bool {
 
     false
 }
+
 fn mode_string(meta: &std::fs::Metadata, path: &Path) -> String {
     let mode = meta.mode();
     let file_type = meta.file_type();
@@ -525,6 +536,7 @@ fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> S
         "".to_string()
     }
 }
+
 pub fn filter_flags(args: Vec<String>) -> Option<(Vec<String>, bool, bool, bool)> {
     let mut directories = vec![];
     let mut show_hidden = false;
@@ -551,6 +563,7 @@ pub fn filter_flags(args: Vec<String>) -> Option<(Vec<String>, bool, bool, bool)
 fn major(dev: u64) -> u64 {
     (dev >> 8) & 0xfff
 }
+
 fn minor(dev: u64) -> u64 {
     (dev & 0xff) | ((dev >> 12) & 0xfff00)
 }
