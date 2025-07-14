@@ -341,13 +341,6 @@ fn get_file_info(
         SizeOrDevice::Size(meta.len())
     };
     
-    // let modified: DateTime<Utc> = DateTime::from(meta.modified()?);
-    // let now = Utc::now();
-
-    // let duration = now.signed_duration_since(modified);
-
-    // let six_months = chrono::Duration::days(30 * 6);
-    // let show_time = duration < six_months && duration.num_seconds() >= 0;
     let tz_name = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
     let local_tz: Tz = tz_name.parse().unwrap_or(Tz::UTC);
 
