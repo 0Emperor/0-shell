@@ -1,338 +1,448 @@
 use chrono::{DateTime, Local};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-use std::{fs, io};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 use terminal_size::{terminal_size, Width};
 use users::{get_group_by_gid, get_user_by_uid};
-/// Lists directory contents with support for common flags.
-///
-/// # Arguments
-///
-/// * `dirs` - Vector of directory paths or flags (e.g., `["-l", ".", "src"]`).
-///
-/// # Supported flags
-///
-/// - `-a` : Include hidden files (starting with `.`).
-/// - `-l` : Long format listing with detailed metadata.
-/// - `-F` : Append file-type suffixes (`/`, `*`, `@`, etc.).
-///
-/// # Behavior
-///
-/// - If no directories specified, lists current directory.
-/// - Sorts files case-insensitively.
-/// - For `-l` flag, prints total blocks and detailed metadata.
-/// - Handles multiple directories, printing errors for inaccessible ones.
-///
-/// # Returns
-///
-/// Returns `io::Result<()>` to allow propagation of I/O errors.
-///
-/// # Example
-///
-/// ```
-/// ls(vec!["-la".to_string(), ".".to_string()]).unwrap();
-/// ```
-pub fn ls(dirs: Vec<String>) -> io::Result<()> {
-    let mut rs = vec![];
-    let mut ers = vec![];
-    match filter_flags(dirs.clone()){
-        Some((mut arguments, flags))=>{
-let f = flags[0];
-    let a = flags[1];
-    let l = flags[2];
+use xattr;
 
-    if arguments.is_empty() {
-        arguments.push(".".to_string());
+struct FileInfo {
+    permissions: String,
+    links: u64,
+    user: String,
+    group: String,
+    size_or_device: SizeOrDevice,
+    modified_time: String,
+    name: String,
+    path: PathBuf,
+}
+
+enum SizeOrDevice {
+    Size(u64),
+    Device { major: u64, minor: u64 },
+}
+
+pub fn ls(args: Vec<String>) -> io::Result<()> {
+    let (directories, show_hidden, long_format, classify) = match filter_flags(args.clone()) {
+        Some(result) => result,
+        None => {
+            println!("ls: invalid flag");
+            return Ok(());
+        }
+    };
+    let mut eh = false;
+    let mut effective_dirs = directories.clone();
+    if effective_dirs.is_empty() {
+        effective_dirs.push(".".to_string());
     }
 
-    for dir in &arguments {
-        match fs::read_dir(&dir) {
+    let mut output_sections = Vec::new();
+    let mut error_messages = Vec::new();
+    let mut files_out = Vec::new();
+let mut files=Vec::new();
+    for (i, dir_path_str) in effective_dirs.iter().enumerate() {
+        if effective_dirs.len() > 1 {
+            if i > 0 {
+                output_sections.push(String::new());
+            }
+        }
+
+        let dir_path = Path::new(dir_path_str);
+        match fs::read_dir(dir_path) {
             Ok(entries) => {
-                let mut paths = entries
-                    .map(|res| res.map(|e| e.path()))
-                    .collect::<Result<Vec<_>, io::Error>>()?;
-        paths.sort_by(|a, b| {
-    let a_name = a.file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
-        .unwrap_or_default();
-    let b_name = b.file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
-        .unwrap_or_default();
-    
-    a_name.cmp(&b_name).then_with(|| {
-        a.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_lowercase()
-            .cmp(
-                &b.file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default()
-                    .to_lowercase()
-            )
-    })
-});
-                let total_blocks: u64 = paths
-                    .iter()
-                    .filter(|entry| {
-                        if let Some(name) = entry.file_name().and_then(|s| s.to_str()) {
-                            a || !name.starts_with('.')
-                        } else {
-                            false
-                        }
-                    })
-                    .filter_map(|entry| fs::symlink_metadata(entry).ok())
-                    .map(|meta| meta.blocks() / 2)
-                    .sum();
-                if l && arguments.len() == 1 {
-                    println!("total {}", total_blocks);
+                let mut file_infos = Vec::new();
+                if effective_dirs.len() != 1 {
+                    if eh {
+                        output_sections.push(format!("\n{}:", dir_path_str));
+                    } else {
+                        output_sections.push(format!("{}:", dir_path_str));
+                        eh = true
+                    }
                 }
-                let mut files: Vec<String> = vec![];
-                for entry in paths {
-                    if let Some(filename) = entry.file_name() {
-                        let name = filename.to_string_lossy();
-                        if !a && name.starts_with('.') {
+
+                if show_hidden {
+                    if let Ok(info) =
+                        get_file_info(dir_path, classify, long_format, Some(dir_path_str))
+                    {
+                        file_infos.push(info);
+                    }
+                    if let Ok(info) = get_file_info(
+                        &dir_path.join(".."),
+                        classify,
+                        long_format,
+                        Some(dir_path_str),
+                    ) {
+                        file_infos.push(info);
+                    }
+                }
+
+                let mut paths: Vec<PathBuf> =
+                    entries.filter_map(Result::ok).map(|e| e.path()).collect();
+
+                paths.sort_by(|a, b| {
+                    let a_name = a
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| {
+                            s.chars()
+                                .filter(|c| c.is_alphanumeric())
+                                .collect::<String>()
+                                .to_lowercase()
+                        })
+                        .unwrap_or_default();
+                    let b_name = b
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| {
+                            s.chars()
+                                .filter(|c| c.is_alphanumeric())
+                                .collect::<String>()
+                                .to_lowercase()
+                        })
+                        .unwrap_or_default();
+
+                    a_name.cmp(&b_name).then_with(|| {
+                        a.file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or_default()
+                            .to_lowercase()
+                            .cmp(
+                                &b.file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or_default()
+                                    .to_lowercase(),
+                            )
+                    })
+                });
+
+                for path in &paths {
+                    if let Ok(info) = get_file_info(path, classify, long_format, Some(dir_path_str))
+                    {
+                        if !show_hidden && info.name.starts_with('.') {
                             continue;
                         }
+                        file_infos.push(info);
+                    }
+                }
 
-                        let mut display = if f {
-                            let meta = fs::symlink_metadata(&entry)?;
-                            let file_type = meta.file_type();
-                            format!("{}{}", name, classify_suffix(&file_type, &meta, l))
+                file_infos.sort_by(|a, b| {
+                    let a_is_dot = a.name == "." || a.name == "./";
+                    let b_is_dot = b.name == "." || b.name == "./";
+                    let a_is_dotdot = a.name == ".." || a.name == "../";
+                    let b_is_dotdot = b.name == ".." || b.name == "../";
+
+                    if a_is_dot {
+                        return std::cmp::Ordering::Less;
+                    }
+                    if b_is_dot {
+                        return std::cmp::Ordering::Greater;
+                    }
+                    if a_is_dotdot {
+                        return if b_is_dot {
+                            std::cmp::Ordering::Greater
                         } else {
-                            name.to_string()
+                            std::cmp::Ordering::Less
                         };
-                        if l {
-                            let meta = fs::symlink_metadata(&entry)?;
-                            let mode = mode_string(&meta);
-                            let nlink = meta.nlink();
-                            let uid = meta.uid();
-                            let gid = meta.gid();
-                            let size = meta.len();
-                            let modified: DateTime<Local> = DateTime::from(meta.modified()?);
-                            let time_str = modified.format("%b %e %H:%M").to_string();
-                            let user = get_user_by_uid(uid)
-                                .map(|u| u.name().to_string_lossy().to_string())
-                                .unwrap_or(uid.to_string());
-                            let group = get_group_by_gid(gid)
-                                .map(|g| g.name().to_string_lossy().to_string())
-                                .unwrap_or(gid.to_string());
-                                if meta.file_type().is_symlink() {
-                                    if let Ok(target) = fs::read_link(&entry) {
-                                        display.push_str(&format!(" -> {}",target.display()));
-                                    }
-                                }
-                            display = format!(
-                                "{} {} {} {} {} {} {}",
-                                mode, nlink, user, group, size, time_str, display
-                            );
-                        }
-                        files.push(display);
                     }
-                }
-                if a {
-                    let mut cur = ".".to_string();
-                    let mut par = "..".to_string();
-                    if f {
-                        cur.push('/');
-                        par.push('/');
+                    if b_is_dotdot {
+                        return if a_is_dot {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Greater
+                        };
                     }
-                    if l {
-                        par = getl(par);
-                        cur = getl(cur);
-                    }
-                    files.insert(0, par);
-                    files.insert(0, cur);
-                }
-                if files.is_empty() && arguments.len()!= 1 {
-                    rs.push(format!("{}:", dir));
-                    continue;
-                }
-                let mut output = String::new();
-                if arguments.len() != 1 {
-                    if l {
-                        output.push_str(&format!("{}:\ntotal: {}\n", dir, total_blocks));
-                    } else {
-                    }
-                }
-                if l {
-                    let mut v = splitforl(files);
 
-                    output.push_str(&formatls(&mut v).trim_start());
+                    let a_name_sort = a
+                        .path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| {
+                            s.chars()
+                                .filter(|c| c.is_alphanumeric())
+                                .collect::<String>()
+                                .to_lowercase()
+                        })
+                        .unwrap_or_default();
+                    let b_name_sort = b
+                        .path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| {
+                            s.chars()
+                                .filter(|c| c.is_alphanumeric())
+                                .collect::<String>()
+                                .to_lowercase()
+                        })
+                        .unwrap_or_default();
+
+                    a_name_sort.cmp(&b_name_sort)
+                });
+
+                if long_format {
+                    let total_blocks: u64 = file_infos
+                        .iter()
+                        .filter_map(|info| fs::symlink_metadata(&info.path).ok())
+                        .map(|m| m.blocks())
+                        .sum();
+
+                    output_sections.push(format!("total {}", total_blocks / 2));
+                    output_sections.push(format_long_columns(file_infos));
                 } else {
-                    output.push_str(&format_columns(files).trim_start());
+                    let names = file_infos.into_iter().map(|fi| fi.name).collect();
+                    output_sections.push(format_columns(names));
                 }
-                rs.push(output.trim().to_string());
             }
             Err(e) => {
-                let msg = e.to_string();
-                let trimmed = msg
-                    .split_once('(')
-                    .map(|(before, _)| before.trim())
-                    .unwrap_or(&msg);
-                ers.push(format!("ls: cannot access '{}': {}", dir, trimmed));
+                if e.kind().to_string() == "not a directory" {
+                    files.push(dir_path);
+                } else {
+                    error_messages.push(format!(
+                        "ls: cannot access '{}': {}",
+                        dir_path_str,
+                        e.kind()
+                    ));
+                }
             }
         }
     }
+    files.sort_by(|a, b| {
+        let a_name = a
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| {
+                s.chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>()
+                    .to_lowercase()
+            })
+            .unwrap_or_default();
+        let b_name = b
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| {
+                s.chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>()
+                    .to_lowercase()
+            })
+            .unwrap_or_default();
 
-    if dirs.len() == 1 {
-        if !ers.is_empty() {
-            println!("{}", ers[0]);
-        } else if !rs.is_empty() {
-            println!("{}", rs[0]);
-        }
-    } else {
-        if !ers.is_empty() {
-            println!("{}\n", ers.join("\n"));
-        }
-        if !rs.is_empty() && rs[0] != ""{
-            print!("{}\n", rs.join("\n\n"));
-        }
+        a_name.cmp(&b_name).then_with(|| {
+            a.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_lowercase()
+                .cmp(
+                    &b.file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_default()
+                        .to_lowercase(),
+                )
+        })
+    });
+for fi in files {
+    let mut file_infos = Vec::new();
+                    if let Ok(info) = get_file_info(fi, classify, long_format, None) {
+                        file_infos.push(info);
+                    }
+                    if long_format {
+                        files_out.push(format_long_columns(file_infos));
+                    } else {
+                        let names = file_infos.into_iter().map(|fi| fi.name).collect();
+                        files_out.push(format_columns(names));
+                    }
+}
+    if !error_messages.is_empty() {
+        println!("{}", error_messages.join("\n"));
+    }
+    if !files_out.is_empty() {
+        println!(
+            "{}",
+            if long_format {
+                files_out.join("\n")
+            } else {
+                files_out.join(" ")
+            }
+        );
+    }
+    if !output_sections.iter().filter(|a| !a.is_empty()).collect::<Vec<&String>>().is_empty() && !files_out.is_empty() {
+        println!();
+    }
+    for (_, section) in output_sections.iter().filter(|a| !a.is_empty()).enumerate() {
+        println!("{}", section);
     }
     Ok(())
-        }
-        _=>{
-            println!("ls: invalid flag");
-Ok(())
+}
+
+fn get_file_info(
+    path: &Path,
+    classify: bool,
+    long_format: bool,
+    original_dir: Option<&str>,
+) -> io::Result<FileInfo> {
+    let meta = fs::symlink_metadata(path)?;
+    let file_type = meta.file_type();
+
+    let mut name = if Some(path.to_str().unwrap_or_default()) == original_dir {
+        ".".to_string()
+    } else if path.to_str().map_or(false, |s| s.ends_with("/..")) {
+        "..".to_string()
+    } else {
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    name = if should_be_in_quotes(&name) {
+        format!("\'{}\'", name)
+    } else {
+        name
+    };
+    if classify {
+        if file_type.is_dir() {
+            name.push('/');
+        } else if file_type.is_symlink() {
+            if !long_format {
+                name.push('@');
+            }
+        } else {
+            name.push_str(&classify_suffix(&file_type, &meta));
         }
     }
-    
-}
 
-fn formatls(v: &mut Vec<Vec<String>>) -> String {
-    let maxwidths = maxwidths(v);
-    let lines: Vec<String> = v
-        .into_iter()
-        .map(|line| {
-            line.iter()
-                .enumerate()
-                .map(|(i, word)| {
-                    if i == 4 || i == 1 {
-                        format!("{:>width$}", word, width = maxwidths[i])
-                    } else {
-                        if i < 9 {
-                            format!("{:<width$}", word, width = maxwidths[i])
-                        } else {
-                            format!("{:<width$}", word, width = 1)
-                        }
+    if long_format && file_type.is_symlink() {
+        if let Ok(target_path) = fs::read_link(path) {
+            let mut target_display = target_path.to_string_lossy().to_string();
+
+            if classify {
+                if let Ok(target_meta) = fs::metadata(&target_path) {
+                    let target_type = target_meta.file_type();
+                    if target_type.is_dir() {
+                        target_display.push('/');
+                    } else if target_type.is_socket() {
+                        target_display.push('=');
+                    } else if target_type.is_fifo() {
+                        target_display.push('|');
                     }
-                })
-                .collect::<Vec<String>>()
-                .join(" ")
-        })
-        .collect();
-    lines.join("\n")
-}
-
-fn maxwidths(v: &mut Vec<Vec<String>>) -> Vec<usize> {
-    let mut r = vec![0; 9];
-    for line in v {
-        for (i, col) in line.clone().iter().enumerate() {
-            if i == 9 {
-                if let Some(extra) = line.pop() {
-                    line[8].push_str(&format!(" {}", extra));
                 }
             }
-            if i < r.len() {
-                r[i] = r[i].max(col.len());
-            }
+            name.push_str(&format!(" -> {}", target_display));
         }
     }
-    r
+
+    let size_or_device = if file_type.is_block_device() || file_type.is_char_device() {
+        SizeOrDevice::Device {
+            major: major(meta.rdev()),
+            minor: minor(meta.rdev()),
+        }
+    } else {
+        SizeOrDevice::Size(meta.len())
+    };
+
+    let modified: DateTime<Local> = DateTime::from(meta.modified()?);
+
+    Ok(FileInfo {
+        permissions: mode_string(&meta, path),
+        links: meta.nlink(),
+        user: get_user_by_uid(meta.uid())
+            .map(|u| u.name().to_string_lossy().into_owned())
+            .unwrap_or_else(|| meta.uid().to_string()),
+        group: get_group_by_gid(meta.gid())
+            .map(|g| g.name().to_string_lossy().into_owned())
+            .unwrap_or_else(|| meta.gid().to_string()),
+        size_or_device,
+        modified_time: modified.format("%b %e %H:%M").to_string(),
+        name,
+        path: path.to_path_buf(),
+    })
 }
 
-fn format_columns(items: Vec<String>) -> String {
-    if items.is_empty() {
+fn format_long_columns(infos: Vec<FileInfo>) -> String {
+    if infos.is_empty() {
         return String::new();
     }
-    if items[0].ends_with("\n") {
-        return items.join("");
-    }
-    let term_width = terminal_size().map_or(80, |(Width(w), _)| w as usize);
-    let n_items = items.len();
 
-    let mut cols = 1;
-    let mut rows = n_items;
-    for c in (1..=n_items).rev() {
-        let r = (n_items + c - 1) / c;
-        let mut col_widths = vec![0; c];
-        for col in 0..c {
-            for row in 0..r {
-                let i = row + col * r;
-                if i < n_items {
-                    col_widths[col] = col_widths[col].max(items[i].len());
-                }
+    let mut max_links_width = 0;
+    let mut max_user_width = 0;
+    let mut max_group_width = 0;
+    let mut max_major_width = 0;
+    let mut max_minor_width = 0;
+    let mut max_size_width = 0;
+
+    for info in &infos {
+        max_links_width = max_links_width.max(info.links.to_string().len());
+        max_user_width = max_user_width.max(info.user.len());
+        max_group_width = max_group_width.max(info.group.len());
+
+        match info.size_or_device {
+            SizeOrDevice::Size(size) => {
+                max_size_width = max_size_width.max(size.to_string().len());
             }
-        }
-        let total_width: usize = col_widths.iter().sum::<usize>() + 2 * (c - 1);
-        if total_width <= term_width {
-            cols = c;
-            rows = r;
-            break;
-        }
-    }
-
-    let mut col_widths = vec![0; cols];
-    for col in 0..cols {
-        for row in 0..rows {
-            let i = row + col * rows;
-            if i < n_items {
-                col_widths[col] = col_widths[col].max(items[i].len());
+            SizeOrDevice::Device { major, minor } => {
+                max_major_width = max_major_width.max(major.to_string().len());
+                max_minor_width = max_minor_width.max(minor.to_string().len());
             }
         }
     }
+
+    let dev_width = max_major_width + 2 + max_minor_width;
+    let size_col_width = max_size_width.max(dev_width);
 
     let mut output = String::new();
-    for row in 0..rows {
-        for col in 0..cols {
-            let i = row + col * rows;
-            if i < n_items {
-                let s = &items[i];
-                let padding = col_widths[col].saturating_sub(s.len());
-                output.push_str(s);
-                if col < cols - 1 {
-                    output.push_str(&" ".repeat(padding + 2));
-                }
+    for info in infos {
+        output.push_str(&format!(
+            "{} {:>links_w$} {:<user_w$} {:<group_w$} ",
+            info.permissions,
+            info.links,
+            info.user,
+            info.group,
+            links_w = max_links_width,
+            user_w = max_user_width,
+            group_w = max_group_width
+        ));
+
+        let size_str = match info.size_or_device {
+            SizeOrDevice::Size(size) => format!("{:>width$}", size, width = size_col_width),
+            SizeOrDevice::Device { major, minor } => {
+                let dev_str = format!("{},", major);
+                let combined = format!(
+                    "{:>maj_w$} {:>min_w$}",
+                    dev_str,
+                    minor,
+                    maj_w = max_major_width + 1,
+                    min_w = max_minor_width
+                );
+                format!("{:>width$}", combined, width = size_col_width)
             }
-        }
-        output.push('\n');
+        };
+        output.push_str(&size_str);
+        output.push_str(&format!(" {} {}\n", info.modified_time, info.name));
     }
 
     output.trim_end().to_string()
 }
+fn should_be_in_quotes(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
 
-pub fn filter_flags(dirs: Vec<String>) -> Option<(Vec<String>, Vec<bool>)>{
-    let mut args = vec![];
-    let mut flags = vec![false; 3];
-    for arg in dirs {
-        if !arg.starts_with('-') {
-            args.push(arg);
-        } else {
-            if arg.contains('F') {
-                flags[0] = true;
-            }
-            if arg.contains('a') {
-                flags[1] = true;
-            }
-            if arg.contains('l') {
-                flags[2] = true;
-            }
-let mut c: u8 =0; 
-       while c <=127 {
-        if c as char !='F' && c as char !='l'&& c as char !='a'{
-        if arg[1..].contains(c as char){
-return  None;
+    for c in s.chars() {
+        if c.is_whitespace() || c.is_control() {
+            return true;
         }
-        }
-        c+=1;
-       }
+
+        match c {
+            '*' | '?' | '[' | ']' | '{' | '}' | '(' | ')' | '\'' | '"' | ';' | '&' | '|' | '<'
+            | '>' | '$' | '\\' | '`' | '~' | '!' => return true,
+            _ => {}
         }
     }
-   Some ((args, flags))
-}
 
-fn mode_string(meta: &std::fs::Metadata) -> String {
+    false
+}
+fn mode_string(meta: &std::fs::Metadata, path: &Path) -> String {
     let mode = meta.mode();
     let file_type = meta.file_type();
     let file_type_char = if file_type.is_dir() {
@@ -386,65 +496,126 @@ fn mode_string(meta: &std::fs::Metadata) -> String {
         (false, false) => '-',
     };
 
-    format!("{}{}{}{}{}{}{}{}{}{}", file_type_char, ur, uw, ux, gr, gw, gx, or, ow, ox)
+    let base_mode = format!(
+        "{}{}{}{}{}{}{}{}{}{}",
+        file_type_char, ur, uw, ux, gr, gw, gx, or, ow, ox
+    );
+
+    let has_acl = xattr::get(path, "system.posix_acl_access").is_ok_and(|v| v.is_some());
+
+    let acl_char = if has_acl { "+" } else { " " };
+
+    format!("{}{}", base_mode, acl_char)
 }
 
-fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata, l: bool) -> String {
+fn classify_suffix(file_type: &std::fs::FileType, meta: &std::fs::Metadata) -> String {
+    if file_type.is_symlink() {
+        return "@".to_string();
+    }
+
     if file_type.is_dir() {
         "/".to_string()
-    } else if file_type.is_symlink() {
-        if l {}
-        "@".to_string()
     } else if file_type.is_fifo() {
         "|".to_string()
     } else if file_type.is_socket() {
         "=".to_string()
-    } else if file_type.is_file() && meta.permissions().mode() & 0o111 != 0 {
+    } else if meta.permissions().mode() & 0o111 != 0 {
         "*".to_string()
     } else {
         "".to_string()
     }
 }
+pub fn filter_flags(args: Vec<String>) -> Option<(Vec<String>, bool, bool, bool)> {
+    let mut directories = vec![];
+    let mut show_hidden = false;
+    let mut long_format = false;
+    let mut classify = false;
 
-fn getl(s: String) -> String {
-    let meta = fs::symlink_metadata(&s).unwrap();
-    let mode = mode_string(&meta);
-    let nlink = meta.nlink();
-    let uid = meta.uid();
-    let gid = meta.gid();
-    let size = meta.len();
-    let modified: DateTime<Local> = DateTime::from(meta.modified().unwrap());
-    let time_str = modified.format("%b %e %H:%M").to_string();
-    let user = get_user_by_uid(uid)
-        .map(|u| u.name().to_string_lossy().to_string())
-        .unwrap_or(uid.to_string());
-    let group = get_group_by_gid(gid)
-        .map(|g| g.name().to_string_lossy().to_string())
-        .unwrap_or(gid.to_string());
-    format!(
-        "{} {} {} {} {} {} {}",
-        mode, nlink, user, group, size, time_str, s
-    )
-    .to_string()
-}
-fn splitforl(files: Vec<String>)-> Vec<Vec<String>>{
-    let mut r = vec![];
-    for file in files{
-        let mut chob = vec![];
-        let mut st = String::new();
-        for (i,c) in file.chars().enumerate(){
-            if chob.len() == 8{
-                chob.push(file[i..].to_string());
-                break
+    for arg in args {
+        if arg.starts_with('-') {
+            for c in arg.chars().skip(1) {
+                match c {
+                    'a' => show_hidden = true,
+                    'l' => long_format = true,
+                    'F' => classify = true,
+                    _ => return None,
+                }
             }
-            if c == ' ' {
-                chob.push(st);
-                st = String::new();
-            }else{
-                st.push(c);
+        } else {
+            directories.push(arg);
+        }
+    }
+    Some((directories, show_hidden, long_format, classify))
+}
+
+fn major(dev: u64) -> u64 {
+    (dev >> 8) & 0xfff
+}
+fn minor(dev: u64) -> u64 {
+    (dev & 0xff) | ((dev >> 12) & 0xfff00)
+}
+
+fn format_columns(items: Vec<String>) -> String {
+    if items.is_empty() {
+        return String::new();
+    }
+    let term_width = terminal_size().map_or(80, |(Width(w), _)| w as usize);
+    let n_items = items.len();
+
+    let mut best_cols = 1;
+    for cols in (1..=n_items).rev() {
+        let rows = (n_items + cols - 1) / cols;
+        let mut col_widths = vec![0; cols];
+        let mut total_width = 0;
+        let mut possible = true;
+        for col in 0..cols {
+            for row in 0..rows {
+                let i = col * rows + row;
+                if i < n_items {
+                    col_widths[col] = col_widths[col].max(items[i].len());
+                }
+            }
+            total_width += col_widths[col];
+            if col > 0 {
+                total_width += 2;
+            }
+            if total_width > term_width {
+                possible = false;
+                break;
             }
         }
-        r.push(chob)
+        if possible {
+            best_cols = cols;
+            break;
+        }
     }
-    r
- } 
+
+    let rows = (n_items + best_cols - 1) / best_cols;
+    let mut col_widths = vec![0; best_cols];
+    for col in 0..best_cols {
+        for row in 0..rows {
+            let i = col * rows + row;
+            if i < n_items {
+                col_widths[col] = col_widths[col].max(items[i].len());
+            }
+        }
+    }
+
+    let mut output = String::new();
+    for row in 0..rows {
+        for col in 0..best_cols {
+            let i = col * rows + row;
+            if i < n_items {
+                let s = &items[i];
+                output.push_str(s);
+                if col < best_cols - 1 {
+                    let padding = col_widths[col] - s.len();
+                    output.push_str(&" ".repeat(padding + 2));
+                }
+            }
+        }
+        output.push('\n');
+    }
+
+    output.trim_end().to_string()
+}
