@@ -1,25 +1,5 @@
 use std::{fs, path::Path};
-// use std::path::Path;
-/// Moves or renames files and directories.
-///
-/// # Arguments
-///
-/// * `args` - Vector of command-line arguments where:
-///   - All but last are source paths.
-///   - Last is the destination path.
-///
-/// # Behavior
-///
-/// - If multiple sources, destination must be an existing directory.
-/// - If single source and destination does not exist, renames source to destination.
-/// - Prints error messages for invalid arguments or I/O errors.
-///
-/// # Example
-///
-/// ```
-/// mv(vec!["file1.txt".to_string(), "file2.txt".to_string(), "dir".to_string()]);
-/// mv(vec!["oldname.txt".to_string(), "newname.txt".to_string()]);
-/// ```
+
 pub fn mv(args: Vec<String>) {
     if args.len() < 2 {
         eprintln!("mv: missing file operand or destination");

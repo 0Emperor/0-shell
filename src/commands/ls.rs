@@ -1,4 +1,5 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::{
     fs, io,
@@ -339,14 +340,23 @@ fn get_file_info(
     } else {
         SizeOrDevice::Size(meta.len())
     };
+    
+    // let modified: DateTime<Utc> = DateTime::from(meta.modified()?);
+    // let now = Utc::now();
 
-    let modified: DateTime<Local> = DateTime::from(meta.modified()?);
-    let now = Local::now();
+    // let duration = now.signed_duration_since(modified);
 
-    let duration = now.signed_duration_since(modified);
+    // let six_months = chrono::Duration::days(30 * 6);
+    // let show_time = duration < six_months && duration.num_seconds() >= 0;
+    let tz_name = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
+    let local_tz: Tz = tz_name.parse().unwrap_or(Tz::UTC);
 
+    let modified_utc: DateTime<Utc> = meta.modified()?.into();
+    let modified_local = modified_utc.with_timezone(&local_tz);
+
+    let duration = Utc::now().signed_duration_since(modified_utc);
     let six_months = chrono::Duration::days(30 * 6);
-    let show_time = duration < six_months && duration.num_seconds() >= 0;
+    let is_recent = duration < six_months && duration.num_seconds() >= 0;
 
     Ok(FileInfo {
         permissions: mode_string(&meta, path),
@@ -358,10 +368,10 @@ fn get_file_info(
             .map(|g| g.name().to_string_lossy().into_owned())
             .unwrap_or_else(|| meta.gid().to_string()),
         size_or_device,
-        modified_time: if show_time {
-            modified.format("%b %e %H:%M").to_string()
+        modified_time: if is_recent {
+            modified_local.format("%b %e %H:%M").to_string()
         } else {
-            modified.format("%b %e %Y").to_string()
+            modified_local.format("%b %e  %Y").to_string()
         },
         name,
         path: path.to_path_buf(),

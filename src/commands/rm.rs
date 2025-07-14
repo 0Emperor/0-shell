@@ -1,27 +1,6 @@
 use std::fs;
 use std::path::Path;
-/// Removes files or directories specified in the arguments.
-///
-/// Supports the `-r` flag for recursive removal of directories.
-///
-/// # Arguments
-///
-/// * `args` - Vector of strings representing command-line arguments,
-///            e.g. `["-r", "folder", "file.txt"]`
-///
-/// # Behavior
-///
-/// - If an unknown flag is found (anything other than `-r`), prints an error and exits.
-/// - If no paths are provided, prints a missing operand error.
-/// - Deletes files directly.
-/// - Deletes directories only if `-r` flag is present; otherwise, prints an error.
-///
-/// # Example
-///
-/// ```
-/// rm(vec!["-r".to_string(), "mydir".to_string()]);
-/// rm(vec!["file.txt".to_string()]);
-/// ```
+
 pub fn rm(args: Vec<String>) {
     let mut recursive = false;
     let mut paths = Vec::new();
