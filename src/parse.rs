@@ -63,13 +63,13 @@ pub fn split(input: &str) -> Result<Cmd, u8> {
                 }
             }
             '$' if !in_single_quotes => {
-                chars.next(); // skip '$'
+                chars.next();
                 let mut var_name = String::new();
                 if let Some(&'{') = chars.peek() {
-                    chars.next(); // skip '{'
+                    chars.next(); 
                     while let Some(&c) = chars.peek() {
                         if c == '}' {
-                            chars.next(); // skip '}'
+                            chars.next(); 
                             break;
                         }
                         var_name.push(c);

@@ -25,7 +25,6 @@
 use std::io::{self, Write};
 
 pub fn echo(raw_input: &str) {
-    // --- 1. Shell-level parsing ---
     let mut args = Vec::new();
     let mut current_arg = String::new();
     let mut in_quotes: Option<char> = None;
@@ -40,11 +39,11 @@ pub fn echo(raw_input: &str) {
                     current_arg.push('\\');
                 }
             }
-            q @ ('"' | '\'') => {
-                if in_quotes == Some(q) {
+            '"' | '\'' => {
+                if in_quotes == Some(c) {
                     in_quotes = None;
                 } else if in_quotes.is_none() {
-                    in_quotes = Some(q);
+                    in_quotes = Some(c);
                 } else {
                     current_arg.push(c);
                 }
@@ -64,8 +63,7 @@ pub fn echo(raw_input: &str) {
         args.push(current_arg);
     }
 
-    // --- 2. Interpret the string ---
-    let content = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let content: String = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
     let mut chars = content.chars().peekable();
     let stdout = io::stdout();
     let mut handle = stdout.lock();
@@ -74,7 +72,7 @@ pub fn echo(raw_input: &str) {
         if c == '\\' {
             match chars.peek() {
                 Some('x') => {
-                    chars.next(); // consume 'x'
+                    chars.next(); 
                     let hi = chars.next();
                     let lo = chars.next();
                     if let (Some(h), Some(l)) = (hi, lo) {
@@ -83,7 +81,6 @@ pub fn echo(raw_input: &str) {
                             continue;
                         }
                     }
-                    // Fallback if malformed
                     handle.write_all(b"").unwrap();
                     if let Some(h) = hi {
                         handle.write_all(&[h as u8]).unwrap();
@@ -104,7 +101,7 @@ pub fn echo(raw_input: &str) {
                     chars.next();
                     handle.write_all(b"\r").unwrap();
                 }
-                Some('c') => return, // stop output
+                Some('c') => return, 
                 Some('\\') => {
                     chars.next();
                     handle.write_all(b"\\").unwrap();
