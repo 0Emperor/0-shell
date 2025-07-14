@@ -84,7 +84,7 @@ pub fn echo(raw_input: &str) {
                         }
                     }
                     // Fallback if malformed
-                    handle.write_all(b"\\x").unwrap();
+                    handle.write_all(b"").unwrap();
                     if let Some(h) = hi {
                         handle.write_all(&[h as u8]).unwrap();
                     }
