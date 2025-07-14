@@ -18,7 +18,6 @@ fn main() {
         let mut input = String::new();
         let bytes = io::stdin().read_line(&mut input).unwrap();
         if bytes == 0 {
-            println!("ur not worthy anyway...");
             break;
         }
         let mut input = clean_input(&input);
@@ -59,5 +58,4 @@ fn main() {
             _ => println!("Command '{}' not found", cmd.command),
         }
     }
-    println!("good bye, we wont miss you.");
 }
