@@ -22,9 +22,10 @@
 /// };
 /// echo(cmd);
 /// ```
+use std::io::{self, Write};
+
 pub fn echo(raw_input: &str) {
     // --- 1. Shell-level parsing ---
-    // This parser now handles unquoted backslashes differently from quoted ones.
     let mut args = Vec::new();
     let mut current_arg = String::new();
     let mut in_quotes: Option<char> = None;
@@ -32,38 +33,28 @@ pub fn echo(raw_input: &str) {
     let mut chars = raw_input.chars();
     while let Some(c) = chars.next() {
         match c {
-            // NEW: Handle unquoted backslashes for shell-level escaping.
             '\\' if in_quotes.is_none() => {
-                // The backslash escapes the next character for the shell.
-                // We consume the backslash and append the next character directly.
                 if let Some(next_char) = chars.next() {
                     current_arg.push(next_char);
                 } else {
-                    // A lone trailing backslash is treated literally.
                     current_arg.push('\\');
                 }
             }
-
-            // Handle quotes to group arguments.
             q @ ('"' | '\'') => {
                 if in_quotes == Some(q) {
-                    in_quotes = None; // Closing quote
+                    in_quotes = None;
                 } else if in_quotes.is_none() {
-                    in_quotes = Some(q); // Opening quote
+                    in_quotes = Some(q);
                 } else {
-                    current_arg.push(c); // A quote inside another quote type
+                    current_arg.push(c);
                 }
             }
-
-            // A space outside of quotes is an argument separator.
             ' ' if in_quotes.is_none() => {
                 if !current_arg.is_empty() {
                     args.push(current_arg);
                     current_arg = String::new();
                 }
             }
-
-            // Any other character is part of the current argument.
             _ => {
                 current_arg.push(c);
             }
@@ -73,32 +64,62 @@ pub fn echo(raw_input: &str) {
         args.push(current_arg);
     }
 
-    // Discard the "echo" command name and join the rest.
-    let content = args
-        .iter()
-        .skip(1)
-        .cloned()
-        .collect::<Vec<String>>()
-        .join(" ");
+    // --- 2. Interpret the string ---
+    let content = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let mut chars = content.chars().peekable();
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
 
-    // --- 2. Echo command execution ---
-    // This part remains the same, interpreting the backslashes it receives.
-    let mut chars_to_print = content.chars();
-    while let Some(c) = chars_to_print.next() {
+    while let Some(c) = chars.next() {
         if c == '\\' {
-            match chars_to_print.next() {
-                Some('n') => print!("\n"),
-                Some('t') => print!("\t"),
-                Some('r') => print!("\r"),
-                Some('c') => return,
-                Some('\\') => print!("\\"),
-                Some(other) => print!("\\{}", other),
-                None => print!("\\"),
+            match chars.peek() {
+                Some('x') => {
+                    chars.next(); // consume 'x'
+                    let hi = chars.next();
+                    let lo = chars.next();
+                    if let (Some(h), Some(l)) = (hi, lo) {
+                        if let Ok(byte) = u8::from_str_radix(&format!("{}{}", h, l), 16) {
+                            handle.write_all(&[byte]).unwrap();
+                            continue;
+                        }
+                    }
+                    // Fallback if malformed
+                    handle.write_all(b"\\x").unwrap();
+                    if let Some(h) = hi {
+                        handle.write_all(&[h as u8]).unwrap();
+                    }
+                    if let Some(l) = lo {
+                        handle.write_all(&[l as u8]).unwrap();
+                    }
+                }
+                Some('n') => {
+                    chars.next();
+                    handle.write_all(b"\n").unwrap();
+                }
+                Some('t') => {
+                    chars.next();
+                    handle.write_all(b"\t").unwrap();
+                }
+                Some('r') => {
+                    chars.next();
+                    handle.write_all(b"\r").unwrap();
+                }
+                Some('c') => return, // stop output
+                Some('\\') => {
+                    chars.next();
+                    handle.write_all(b"\\").unwrap();
+                }
+                Some(other) => {
+                    handle.write_all(&[b'\\', *other as u8]).unwrap();
+                }
+                None => {
+                    handle.write_all(b"\\").unwrap();
+                }
             }
         } else {
-            print!("{}", c);
+            handle.write_all(&[c as u8]).unwrap();
         }
     }
 
-    println!();
+    handle.write_all(b"\n").unwrap();
 }
